@@ -39,4 +39,5 @@
                                            (let [dir "src/"]
                                              (script*
                                               (command "ls" :F (command "echo" (command "echo" dir))))))))
-    (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls ~dir)))))))) ;;unquoting supported!
+    (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls ~dir)))))) ;;unquoting supported!
+    (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls (clj dir))))))))) ;;also with clj
