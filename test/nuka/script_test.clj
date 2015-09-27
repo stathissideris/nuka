@@ -25,7 +25,19 @@
          (command "ls" [:F] "my-folder")))
   (is (= (->Command "ls" [(->EmbeddedCommand
                            (->Command "echo" [(->TextArg "src/")]))])
-         (command "ls" (command "echo" "src/")))))
+         (command "ls" (command "echo" "src/"))))
+  (is (= (->Pipe [(->Command "ls" [])
+                  (->Command "grep" [(->TextArg "foo")])])
+         (pipe (command "ls")
+               (command "grep" ["foo"])))))
+
+(deftest test-script
+  (is (= '(nuka.script/script* (pipe (command "ls") (command "grep" "foo")))
+         (macroexpand '(script (pipe (ls) (grep "foo"))))))
+  (is (= (->Script
+          [(->Pipe [(->Command "ls" [])
+                    (->Command "grep" [(->TextArg "foo")])])])
+         (script (pipe (ls) (grep "foo"))))))
 
 (deftest test-render
   (let [r (fn [& commands] (render (apply script* commands)))]
@@ -40,4 +52,7 @@
                                              (script*
                                               (command "ls" :F (command "echo" (command "echo" dir))))))))
     (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls ~dir)))))) ;;unquoting supported!
-    (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls (clj dir))))))))) ;;also with clj
+    (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls (clj dir))))))) ;;also with clj
+    (is (= "ls | grep 'foo'" (render (script (pipe (ls) (grep "foo"))))))
+    (is (= "ls && grep 'foo'" (render (script (chain-and (ls) (grep "foo"))))))
+    (is (= "ls || grep 'foo'" (render (script (chain-or (ls) (grep "foo")))))))) 

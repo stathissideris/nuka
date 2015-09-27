@@ -10,6 +10,9 @@
 (defrecord EmbeddedCommand [cmd])
 (defrecord Script [commands])
 (defrecord Raw [val])
+(defrecord Pipe [commands])
+(defrecord ChainAnd [commands])
+(defrecord ChainOr [commands])
 
 (defn- render-flag-name [f]
   (when f
@@ -49,39 +52,59 @@
                            (let [parsed (parse-arg-set x)]
                              (if (seq? parsed) parsed [parsed]))) arg-sets)))
 
+(defn pipe [& commands]
+  (->Pipe commands))
+
+(defn chain-and [& commands]
+  (->ChainAnd commands))
+
+(defn chain-or [& commands]
+  (->ChainOr commands))
+
 (defn script* [& commands]
   (->Script commands))
 
-(defn- unquote?
+(defn- unquote-form?
   "Tests whether the form is (clj ...) or (unquote ...) or ~expr."
   [form]
-  (or (and (seq? form)
-           (symbol? (first form))
-           (= (symbol (name (first form))) 'clj))
-      (and (seq? form) (= (first form) `unquote))))
+ (or (and (seq? form)
+          (symbol? (first form))
+          (= (symbol (name (first form))) 'clj))
+     (and (seq? form) (= (first form) `unquote))))
 
-(defn- command?
+(def special-instructions
+  #{'pipe 'chain-and 'chain-or})
+
+(defn- special-instruction-form? [form]
+  (and (list? form) (some? (special-instructions (first form)))))
+
+(defn- command-form?
   [form]
-  (and (not (unquote? form))
+  (and (not (unquote-form? form))
+       (not (special-instruction-form? form))
        (list? form)
        (symbol? (first form))))
 
 (defmacro script [& commands]
-  (def ss commands)
-  `(apply script*
-          ~(walk/postwalk
-            (fn [form]
-              (cond
-                (unquote? form) (second form)
-                (command? form) (concat (list 'command (str (first form))) (rest form))
-                :else form)) (vec commands))))
+  `(script*
+    ~@(walk/postwalk
+       (fn [form]
+         (cond
+           (unquote-form? form) (second form)
+           (special-instruction-form? form) form
+           (command-form? form) (concat (list 'command (str (first form))) (rest form))
+           :else form)) (vec commands))))
 
 (defn single-quote [s]
   (str "'" s "'"))
 
 (defmulti render class)
 (defmethod render Script [{:keys [commands]}] (string/join "\n" (map render commands)))
-(defmethod render Command [{:keys [cmd args]}] (str cmd " " (string/join " " (map render args))))
+(defmethod render Pipe [{:keys [commands]}] (string/join " | " (map render commands)))
+(defmethod render ChainAnd [{:keys [commands]}] (string/join " && " (map render commands)))
+(defmethod render ChainOr [{:keys [commands]}] (string/join " || " (map render commands)))
+(defmethod render Command [{:keys [cmd args]}] (let [args (string/join " " (map render args))]
+                                                 (str cmd (when-not (empty? args) (str " " args)))))
 (defmethod render EmbeddedCommand [{:keys [cmd]}] (str "$(" (render cmd) ")"))
 (defmethod render TextArg [{:keys [val]}] (single-quote val))
 (defmethod render NumericArg [{:keys [val]}] (str val))
