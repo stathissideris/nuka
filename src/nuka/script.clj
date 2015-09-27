@@ -77,6 +77,9 @@
 (defn qq [s]
   (->DoubleQuotedArg s))
 
+(defn raw [s]
+  (->Raw s))
+
 (defn script* [& commands]
   (->Script commands))
 
@@ -89,7 +92,7 @@
      (and (seq? form) (= (first form) `unquote))))
 
 (def special-instructions
-  #{'pipe 'chain-and 'chain-or 'q 'qq 'block})
+  #{'pipe 'chain-and 'chain-or 'q 'qq 'block 'raw})
 
 (defn- special-instruction-form? [form]
   (and (list? form) (some? (special-instructions (first form)))))
