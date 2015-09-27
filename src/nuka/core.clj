@@ -1,8 +1,14 @@
 (ns nuka.core
-  (:require [nuka.exec :as exec :refer [run-command >print >slurp kill-process]]
-            [nuka.script :as script :refer [script render]]))
+  (:require [nuka.exec :as exec :refer [run-command >print >slurp kill-process exit-code]]
+            [nuka.script :as script :refer [script]]
+            nuka.script.java
+            nuka.script.bash))
 
 (def cms-dir "/Users/sideris/devel/work/moving-brands/mb-chauhan-phase2/cms/")
+
+(def java-render nuka.script.java/render)
+(def render nuka.script.bash/render)
+
 
 (def base-machine
   {:user "ubuntu"
@@ -31,8 +37,11 @@
 
 (comment
   (>print (run-on dev "ls"))
-  (-> (ls :i) script render run-command >slurp)
-  (-> (whoami) script render run-command >slurp first)
-  (-> (ping (raw ~(:host dev))) script render run-command >print)
-  (-> (sleep 3) script render run-command >print)
+  (-> (ls :i) script java-render first run-command >print)
+  (-> (whoami) script java-render first run-command >slurp first)
+  (-> (seq 3) script java-render first run-command >slurp)
+  
+  (do
+    (def ping (-> (ping :o (raw "www.google.com")) script render run-command))
+    (>print ping))
   )

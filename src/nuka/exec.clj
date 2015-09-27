@@ -3,14 +3,32 @@
             [clojure.core.async :refer [go >! <! <!! >!! go-loop chan alts! alts!! close! timeout] :as async])
   (:import [java.io InputStreamReader BufferedReader]))
 
-(defn line-channel [reader]
-  (let [c (chan 64)]
-    (go-loop []
-      (if-let [line (.readLine reader)]
-        (do
-          (>! c line)
-          (recur))
-        (close! c)))))
+(defn spool
+  "Take a sequence and puts each value on a channel and returns the channel.
+   If no channel is provided, an unbuffered channel is created. If the
+   sequence ends, the channel is closed."
+  ([s c]
+     (async/go
+      (loop [[f & r] s]
+        (if f
+          (do
+            (async/>! c f)
+            (recur r))
+          (async/close! c))))
+     c)
+  ([s]
+     (spool s (async/chan))))
+
+(defn read-line-channel [reader]
+  (spool (line-seq reader)))
+
+(comment
+ (defn read-line-channel [reader]
+   (let [c (chan 64)]
+     (go-loop []
+       (when-let [line (.readLine reader)]
+         (>! c line)
+         (recur))))))
 
 (defn- try-exit-value [p]
   (try (.exitValue p)
@@ -35,26 +53,27 @@
           (recur))))
     c))
 
-(defn run-command [command]
-  (let [p (-> (Runtime/getRuntime) (.exec command))
-        out (->> p .getInputStream InputStreamReader. BufferedReader. line-channel)
-        err (->> p .getErrorStream InputStreamReader. BufferedReader. line-channel)]
-    {:cmd command
+(defn run-command [elements]
+  (let [p (-> (Runtime/getRuntime) (.exec (into-array String elements)))
+        out (->> p .getInputStream InputStreamReader. BufferedReader. read-line-channel)
+        err (->> p .getErrorStream InputStreamReader. BufferedReader. read-line-channel)]
+    {:cmd (pr-str elements)
      :out out
      :err err
-     :exit-value (process-exit-channel p)
-     :control (process-control-channel p)}))
+;;     :result-channel (process-exit-channel p)
+;;     :control (process-control-channel p)
+     }))
 
 (defn kill-process
   "Attempts to kill the external process. Blocking."
   [{:keys [control]}]
   (>!! control :kill))
 
-(defn exit-value
-  "Attempts to retrieve the return value from the external
+(defn exit-code
+  "Attempts to retrieve the exit-code from the external
   process. Blocking."
-  [{:keys [exit-value]}]
-  (<!! exit-value))
+  [{:keys [result-channel]}]
+  (<!! result-channel))
 
 (defn tagged-merge
   "Takes a collection of source channels and returns a channel which
