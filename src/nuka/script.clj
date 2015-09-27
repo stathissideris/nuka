@@ -91,11 +91,16 @@
           (= (symbol (name (first form))) 'clj))
      (and (seq? form) (= (first form) `unquote))))
 
-(def special-instructions
+(def constructors
   #{'pipe 'chain-and 'chain-or 'q 'qq 'block 'raw})
 
-(defn- special-instruction-form? [form]
-  (and (list? form) (some? (special-instructions (first form)))))
+(defn- fully-qualify-constructor [form]
+  (cons
+   (symbol (str "nuka.script/" (first form)))
+   (rest form)))
+
+(defn- constructor-form? [form]
+  (and (list? form) (some? (constructors (first form)))))
 
 (defn- loop-form? [form]
   (and (list? form) (= 'doseq (first form))))
@@ -103,7 +108,7 @@
 (defn- command-form?
   [form]
   (and (not (unquote-form? form))
-       (not (special-instruction-form? form))
+       (not (constructor-form? form))
        (list? form)
        (symbol? (first form))))
 
@@ -113,10 +118,10 @@
        (fn [form]
          (cond
            (unquote-form? form) (second form)
-           (special-instruction-form? form) form
+           (constructor-form? form) (fully-qualify-constructor form)
            (loop-form? form) (let [[_ [b coll] & commands] form]
                                `(->Loop '~b (->EmbeddedCommand ~coll) ~(vec commands)))
-           (command-form? form) (concat (list 'command (str (first form)))
+           (command-form? form) (concat (list 'nuka.script/command (str (first form)))
                                         (map (fn [x] (if (symbol? x) '(clj (quote ~x)) x)) (rest form)))
            :else form)) (vec commands))))
 

@@ -32,11 +32,11 @@
                (command "grep" ["foo"])))))
 
 (deftest test-script
-  (is (= '(nuka.script/script* (pipe (command "ls") (command "grep" "foo")))
+  (is (= '(nuka.script/script* (nuka.script/pipe (nuka.script/command "ls") (nuka.script/command "grep" "foo")))
          (macroexpand '(script (pipe (ls) (grep "foo"))))))
-  (is (= '(nuka.script/script* (command "ls" dir))
+  (is (= '(nuka.script/script* (nuka.script/command "ls" dir))
          (macroexpand '(script (ls ~dir)))))
-  (is (= '(nuka.script/script* (command "ls" dir))
+  (is (= '(nuka.script/script* (nuka.script/command "ls" dir))
          (macroexpand '(script (ls (clj dir))))))
   (is (= (->Script
           [(->Pipe [(->Command "ls" [])

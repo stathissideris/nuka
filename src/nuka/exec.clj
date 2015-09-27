@@ -3,24 +3,37 @@
             [clojure.core.async :refer [go >! <! <!! >!! go-loop chan alts! alts!! close! timeout] :as async])
   (:import [java.io InputStreamReader BufferedReader]))
 
-(defn spool
-  "Take a sequence and puts each value on a channel and returns the channel.
-   If no channel is provided, an unbuffered channel is created. If the
-   sequence ends, the channel is closed."
-  ([s c]
-     (async/go
-      (loop [[f & r] s]
-        (if f
-          (do
-            (async/>! c f)
-            (recur r))
-          (async/close! c))))
-     c)
-  ([s]
-     (spool s (async/chan))))
-
 (defn line-channel [reader]
-  (spool (line-seq reader)))
+  (let [c (chan 64)]
+    (go-loop []
+      (if-let [line (.readLine reader)]
+        (do
+          (>! c line)
+          (recur))
+        (close! c)))))
+
+(defn- try-exit-value [p]
+  (try (.exitValue p)
+       (catch Exception _ nil)))
+
+(defn process-control-channel [p]
+  (let [c (chan)]
+    (go-loop []
+      (when-let [message (<! c)]
+        (when (= :kill message)
+          (.destroy p)
+          (close! c))))
+    c))
+
+(defn process-exit-channel [p]
+  (let [c (chan)]
+    (go-loop []
+      (if-let [v (try-exit-value p)]
+        (>! c v)
+        (do
+          (<! (timeout 50))
+          (recur))))
+    c))
 
 (defn run-command [command]
   (let [p (-> (Runtime/getRuntime) (.exec command))
@@ -28,7 +41,20 @@
         err (->> p .getErrorStream InputStreamReader. BufferedReader. line-channel)]
     {:cmd command
      :out out
-     :err err}))
+     :err err
+     :exit-value (process-exit-channel p)
+     :control (process-control-channel p)}))
+
+(defn kill-process
+  "Attempts to kill the external process. Blocking."
+  [{:keys [control]}]
+  (>!! control :kill))
+
+(defn exit-value
+  "Attempts to retrieve the return value from the external
+  process. Blocking."
+  [{:keys [exit-value]}]
+  (<!! exit-value))
 
 (defn tagged-merge
   "Takes a collection of source channels and returns a channel which
