@@ -34,6 +34,10 @@
             (ssh {:i ~id-file} ~(str user "@" host) (q scr))))]
     (run-command s)))
 
+(defn ping [ip timeout]
+  (let [p (-> (ping {:o true :t ~timeout} ~ip) script java-render first run-command)]
+    (>print p)
+    (exit-code p)))
 
 (comment
   (>print (run-on dev "ls"))
@@ -48,7 +52,13 @@
     (>print ping)
     (exit-code ping))
 
+  (do
+    (def ping (-> (ping :o "54.76.218.80") script java-render first run-command))
+    (>print ping)
+    (exit-code ping))
+
   (def slee (-> (sleep 10) script java-render first run-command))
+  (>print slee)
   (kill-process slee)
   (exit-code slee)
   )

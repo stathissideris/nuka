@@ -25,7 +25,7 @@
 (defmethod render Pipe [{:keys [commands]}] (flatten (interpose "|" (map render commands))))
 (defmethod render ChainAnd [{:keys [commands]}] (flatten (interpose "&&" (map render commands))))
 (defmethod render ChainOr [{:keys [commands]}] (flatten (interpose "||" (map render commands))))
-(defmethod render Command [{:keys [cmd args]}] (cons cmd (map render args)))
+(defmethod render Command [{:keys [cmd args]}] (cons cmd (flatten (map render args))))
 (defmethod render EmbeddedCommand [{:keys [cmd]}] ["$(" (render cmd) ")"])
 (defmethod render Reference [{:keys [val]}] (str "$" val))
 (defmethod render Loop [{:keys [binding coll commands]}]
@@ -38,4 +38,4 @@
 (defmethod render NumericArg [{:keys [val]}] (str val))
 (defmethod render Raw [{:keys [val]}] val)
 (defmethod render Flag [{:keys [val]}] (render-flag-name val))
-(defmethod render NamedArg [{:keys [name val]}] (str (render-flag-name name) " " (render val)))
+(defmethod render NamedArg [{:keys [name val]}] [(render-flag-name name) (render val)])
