@@ -40,8 +40,15 @@
   (-> (ls :i) script java-render first run-command >print)
   (-> (whoami) script java-render first run-command >slurp first)
   (-> (seq 3) script java-render first run-command >slurp)
+
+  (-> (ls :l :F) script java-render first run-command >slurp)
   
   (do
     (def ping (-> (ping :o "www.google.com") script java-render first run-command))
-    (>print ping))
+    (>print ping)
+    (exit-code ping))
+
+  (def slee (-> (sleep 10) script java-render first run-command))
+  (kill-process slee)
+  (exit-code slee)
   )
