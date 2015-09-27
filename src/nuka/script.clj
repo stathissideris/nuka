@@ -2,7 +2,8 @@
   (:require [clojure.string :as string]
             [clojure.walk :as walk]))
 
-(defrecord TextArg [val])
+(defrecord SingleQuotedArg [val])
+(defrecord DoubleQuotedArg [val])
 (defrecord NumericArg [val])
 (defrecord Flag [val])
 (defrecord NamedArg [name val])
@@ -13,6 +14,8 @@
 (defrecord Pipe [commands])
 (defrecord ChainAnd [commands])
 (defrecord ChainOr [commands])
+(defrecord Reference [val])
+(defrecord Loop [binding coll commands])
 
 (defn- render-flag-name [f]
   (when f
@@ -32,10 +35,13 @@
                 (string? x) :string
                 (keyword? x) :keyword
                 (number? x) :number
-                :else (class x))))
+                (symbol? x) :symbol
+                :else :default)))
 
+(defmethod parse-arg-set :default [x] x)
 (defmethod parse-arg-set Command [x] (->EmbeddedCommand x))
-(defmethod parse-arg-set :string [s] (TextArg. s))
+(defmethod parse-arg-set :symbol [x] (->Reference x))
+(defmethod parse-arg-set :string [s] (SingleQuotedArg. s))
 (defmethod parse-arg-set :number [x] (NumericArg. x))
 (defmethod parse-arg-set :keyword [k] (Flag. k))
 (defmethod parse-arg-set :vector [v] (map parse-arg-set v))
@@ -61,6 +67,12 @@
 (defn chain-or [& commands]
   (->ChainOr commands))
 
+(defn q [s]
+  (->SingleQuotedArg s))
+
+(defn qq [s]
+  (->DoubleQuotedArg s))
+
 (defn script* [& commands]
   (->Script commands))
 
@@ -73,10 +85,13 @@
      (and (seq? form) (= (first form) `unquote))))
 
 (def special-instructions
-  #{'pipe 'chain-and 'chain-or})
+  #{'pipe 'chain-and 'chain-or 'q 'qq})
 
 (defn- special-instruction-form? [form]
   (and (list? form) (some? (special-instructions (first form)))))
+
+(defn- loop-form? [form]
+  (and (list? form) (= 'doseq (first form))))
 
 (defn- command-form?
   [form]
@@ -87,16 +102,22 @@
 
 (defmacro script [& commands]
   `(script*
-    ~@(walk/postwalk
+    ~@(walk/prewalk
        (fn [form]
          (cond
            (unquote-form? form) (second form)
            (special-instruction-form? form) form
-           (command-form? form) (concat (list 'command (str (first form))) (rest form))
+           (loop-form? form) (let [[_ [b coll] & commands] form]
+                               `(->Loop '~b (->EmbeddedCommand ~coll) ~(vec commands)))
+           (command-form? form) (concat (list 'command (str (first form)))
+                                        (map (fn [x] (if (symbol? x) '(clj (quote ~x)) x)) (rest form)))
            :else form)) (vec commands))))
 
 (defn single-quote [s]
   (str "'" s "'"))
+
+(defn double-quote [s]
+  (str "\"" s "\""))
 
 (defmulti render class)
 (defmethod render Script [{:keys [commands]}] (string/join "\n" (map render commands)))
@@ -106,7 +127,14 @@
 (defmethod render Command [{:keys [cmd args]}] (let [args (string/join " " (map render args))]
                                                  (str cmd (when-not (empty? args) (str " " args)))))
 (defmethod render EmbeddedCommand [{:keys [cmd]}] (str "$(" (render cmd) ")"))
-(defmethod render TextArg [{:keys [val]}] (single-quote val))
+(defmethod render Reference [{:keys [val]}] (str "$" val))
+(defmethod render Loop [{:keys [binding coll commands]}]
+  (format "for %s in %s; do\n%s\ndone"
+          binding
+          (render coll)
+          (string/join "\n" (map #(str "  " (render %)) commands))))
+(defmethod render SingleQuotedArg [{:keys [val]}] (single-quote val))
+(defmethod render DoubleQuotedArg [{:keys [val]}] (double-quote val))
 (defmethod render NumericArg [{:keys [val]}] (str val))
 (defmethod render Raw [{:keys [val]}] val)
 (defmethod render Flag [{:keys [val]}] (render-flag-name val))

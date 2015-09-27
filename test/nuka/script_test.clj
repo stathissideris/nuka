@@ -6,38 +6,45 @@
 
 (deftest test-command
   (is (= (->Command "ls" [(->Flag :F)]) (command "ls" [:F])))
-  (is (= (->Command "ls" [(->TextArg "-F")]) (command "ls" ["-F"])))
+  (is (= (->Command "ls" [(->SingleQuotedArg "-F")]) (command "ls" ["-F"])))
   (is (= (->Command "ls" [(->Flag :F)]) (command "ls" {:F true})))
   (is (= (command "ls" {:F true :X true})
          (command "ls" {:F true} {:X true})))
   (is (= (command "ls" {:F true :X false})
          (command "ls" {:F true})))
   (is (= (->Command "ls" [(->Flag "F")])  (command "ls" {"F" true})))
-  (is (= (->Command "tar" [(->NamedArg :X (->TextArg "exclusion-file"))])
+  (is (= (->Command "tar" [(->NamedArg :X (->SingleQuotedArg "exclusion-file"))])
          (command "tar" {:X "exclusion-file"})))
-  (is (= (->Command "tar" [(->NamedArg "X" (->TextArg "exclusion-file"))])
+  (is (= (->Command "tar" [(->NamedArg "X" (->SingleQuotedArg "exclusion-file"))])
          (command "tar" {"X" "exclusion-file"})))
-  (is (= (->Command "tar" [(->NamedArg "X" (->TextArg "exclusion-file"))
+  (is (= (->Command "tar" [(->NamedArg "X" (->SingleQuotedArg "exclusion-file"))
                            (->NamedArg "Y" (->NumericArg 4))])
          (command "tar" {"X" "exclusion-file" "Y" 4})))
   (is (= (->Command "ls" [(->Flag :F)
-                          (->TextArg "my-folder")])
+                          (->SingleQuotedArg "my-folder")])
          (command "ls" [:F] "my-folder")))
   (is (= (->Command "ls" [(->EmbeddedCommand
-                           (->Command "echo" [(->TextArg "src/")]))])
+                           (->Command "echo" [(->SingleQuotedArg "src/")]))])
          (command "ls" (command "echo" "src/"))))
   (is (= (->Pipe [(->Command "ls" [])
-                  (->Command "grep" [(->TextArg "foo")])])
+                  (->Command "grep" [(->SingleQuotedArg "foo")])])
          (pipe (command "ls")
                (command "grep" ["foo"])))))
 
 (deftest test-script
   (is (= '(nuka.script/script* (pipe (command "ls") (command "grep" "foo")))
          (macroexpand '(script (pipe (ls) (grep "foo"))))))
+  (is (= '(nuka.script/script* (command "ls" dir))
+         (macroexpand '(script (ls ~dir)))))
+  (is (= '(nuka.script/script* (command "ls" dir))
+         (macroexpand '(script (ls (clj dir))))))
   (is (= (->Script
           [(->Pipe [(->Command "ls" [])
-                    (->Command "grep" [(->TextArg "foo")])])])
-         (script (pipe (ls) (grep "foo"))))))
+                    (->Command "grep" [(->SingleQuotedArg "foo")])])])
+         (script (pipe (ls) (grep "foo")))))
+  (is (= (->Script
+          [(->Loop 'x (->EmbeddedCommand (->Command "ls" [])) [(->Command "echo" [(->Reference 'x)])])])
+         (script (doseq [x (ls)] (echo x))))))
 
 (deftest test-render
   (let [r (fn [& commands] (render (apply script* commands)))]
@@ -55,4 +62,7 @@
     (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls (clj dir))))))) ;;also with clj
     (is (= "ls | grep 'foo'" (render (script (pipe (ls) (grep "foo"))))))
     (is (= "ls && grep 'foo'" (render (script (chain-and (ls) (grep "foo"))))))
-    (is (= "ls || grep 'foo'" (render (script (chain-or (ls) (grep "foo")))))))) 
+    (is (= "ls || grep 'foo'" (render (script (chain-or (ls) (grep "foo"))))))
+    (is (= "for x in $(ls); do\n  echo $x\ndone" (render (script (doseq [x (ls)] (echo x))))))
+    (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone"
+           (render (script (doseq [x (ls)] (echo (qq "foo: $x"))))))))) 
