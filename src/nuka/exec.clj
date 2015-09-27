@@ -5,32 +5,37 @@
 
 (defrecord SystemProcess [out err out-reader err-reader result-channel control])
 
-(defn spool
-  "Take a sequence and puts each value on a channel and returns the channel.
+(comment
+ (defn spool
+   "Take a sequence and puts each value on a channel and returns the channel.
    If no channel is provided, an unbuffered channel is created. If the
    sequence ends, the channel is closed."
-  ([s c]
-     (async/go
+   ([s c]
+    (async/go
       (loop [[f & r] s]
         (if f
           (do
             (async/>! c f)
             (recur r))
           (async/close! c))))
-     c)
-  ([s]
-     (spool s (async/chan))))
+    c)
+   ([s]
+    (spool s (async/chan))))
+
+ (defn read-line-channel [reader]
+   (spool (line-seq reader))))
 
 (defn read-line-channel [reader]
-  (spool (line-seq reader)))
-
-(comment
- (defn read-line-channel [reader]
-   (let [c (chan 64)]
-     (go-loop []
-       (when-let [line (.readLine reader)]
-         (>! c line)
-         (recur))))))
+  (let [c (chan 1024)]
+    (go-loop []
+      (if-let [line (.readLine reader)]
+        (do
+          (>! c line)
+          (recur))
+        (do
+          (.close reader)
+          (close! c))))
+    c))
 
 (defn- try-exit-value [p]
   (try (.exitValue p)
@@ -57,9 +62,9 @@
 
 (defn run-command [elements]
   (let [p (-> (Runtime/getRuntime) (.exec (into-array String elements)))
-        out-reader (->> p .getInputStream InputStreamReader. BufferedReader. read-line-channel)
+        out-reader (->> p .getInputStream InputStreamReader. BufferedReader.)
         out (read-line-channel out-reader)
-        err-reader (->> p .getErrorStream InputStreamReader. BufferedReader. read-line-channel)
+        err-reader (->> p .getErrorStream InputStreamReader. BufferedReader.)
         err (read-line-channel err-reader)]
     (map->SystemProcess
      {:cmd (pr-str elements)
