@@ -16,6 +16,7 @@
 (defrecord ChainOr [commands])
 (defrecord Reference [val])
 (defrecord Loop [binding coll commands])
+(defrecord InlineBlock [commands])
 
 (defn- render-flag-name [f]
   (when f
@@ -67,6 +68,9 @@
 (defn chain-or [& commands]
   (->ChainOr commands))
 
+(defn block [& commands]
+  (->InlineBlock commands))
+
 (defn q [s]
   (->SingleQuotedArg s))
 
@@ -85,7 +89,7 @@
      (and (seq? form) (= (first form) `unquote))))
 
 (def special-instructions
-  #{'pipe 'chain-and 'chain-or 'q 'qq})
+  #{'pipe 'chain-and 'chain-or 'q 'qq 'block})
 
 (defn- special-instruction-form? [form]
   (and (list? form) (some? (special-instructions (first form)))))
@@ -121,6 +125,8 @@
 
 (defmulti render class)
 (defmethod render Script [{:keys [commands]}] (string/join "\n" (map render commands)))
+(defmethod render InlineBlock [{:keys [commands]}]
+  (str "{" (apply str (interleave (map render commands) (repeat "; "))) "}"))
 (defmethod render Pipe [{:keys [commands]}] (string/join " | " (map render commands)))
 (defmethod render ChainAnd [{:keys [commands]}] (string/join " && " (map render commands)))
 (defmethod render ChainOr [{:keys [commands]}] (string/join " || " (map render commands)))

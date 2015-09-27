@@ -65,4 +65,14 @@
     (is (= "ls || grep 'foo'" (render (script (chain-or (ls) (grep "foo"))))))
     (is (= "for x in $(ls); do\n  echo $x\ndone" (render (script (doseq [x (ls)] (echo x))))))
     (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone"
-           (render (script (doseq [x (ls)] (echo (qq "foo: $x"))))))))) 
+           (render (script (doseq [x (ls)] (echo (qq "foo: $x")))))))
+    (is (= "for x in $(ls -F); do\n  echo 'foo:'\n  echo $x\ndone"
+           (render
+            (script
+             (doseq [x (ls :F)]
+               (echo "foo:")
+               (echo x))))))
+    (is (= "rm 'file' || {echo 'Could not delete file!'; exit 1; }"
+           (render (script
+                    (chain-or (rm "file")
+                              (block (echo "Could not delete file!") (exit 1))))))))) 
