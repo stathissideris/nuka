@@ -42,6 +42,6 @@
   (-> (seq 3) script java-render first run-command >slurp)
   
   (do
-    (def ping (-> (ping :o (raw "www.google.com")) script render run-command))
+    (def ping (-> (ping :o "www.google.com") script java-render first run-command))
     (>print ping))
   )

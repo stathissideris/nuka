@@ -60,9 +60,8 @@
     {:cmd (pr-str elements)
      :out out
      :err err
-;;     :result-channel (process-exit-channel p)
-;;     :control (process-control-channel p)
-     }))
+     :result-channel (process-exit-channel p)
+     :control (process-control-channel p)}))
 
 (defn kill-process
   "Attempts to kill the external process. Blocking."
