@@ -19,6 +19,8 @@
   (is (= [["ls" "&&" "grep" "foo"]] (render (script (chain-and (ls) (grep "foo"))))))
   (is (= [["ls" "||" "grep" "foo"]] (render (script (chain-or (ls) (grep "foo"))))))
   (is (= [["ping" "-o" "-t" "2" "54.76.218.80"]] (render (script (ping {:o true :t 2} "54.76.218.80")))))
+  (is (= [["ssh" "-i" "id-file" "user@hehe.com" "ls"]]
+         (render (script (ssh {:i "id-file"} "user@hehe.com" "ls")))))
   (comment
     (is (= "for x in $(ls); do\n  echo $x\ndone" (render (script (doseq [x (ls)] (echo x))))))
     (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone"

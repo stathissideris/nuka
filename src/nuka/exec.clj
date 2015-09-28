@@ -75,7 +75,7 @@
       :result-channel (process-exit-channel p)
       :control (process-control-channel p)})))
 
-(defn kill-process
+(defn kill
   "Attempts to kill the external process. Blocking."
   [{:keys [control]}]
   (>!! control :kill))
