@@ -44,4 +44,5 @@
          (script (pipe (ls) (grep "foo")))))
   (is (= (->Script
           [(->Loop 'x (->EmbeddedCommand (->Command "ls" [])) [(->Command "echo" [(->Reference 'x)])])])
-         (script (doseq [x (ls)] (echo x)))))) 
+         (script (doseq [x (ls)] (echo x)))))
+  (is (= '[script (nuka.script/command "/tmp/script")] (process-script '(script ("/tmp/script")))))) 

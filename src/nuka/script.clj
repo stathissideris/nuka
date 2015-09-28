@@ -109,7 +109,8 @@
   (and (not (unquote-form? form))
        (not (constructor-form? form))
        (list? form)
-       (symbol? (first form))))
+       (or (symbol? (first form))
+           (string? (first form)))))
 
 (defn- process-script [commands]
   (walk/prewalk
