@@ -106,23 +106,46 @@
 
 (defn- command-form?
   [form]
-  (and (not (unquote-form? form))
-       (not (constructor-form? form))
-       (list? form)
-       (or (symbol? (first form))
-           (string? (first form)))))
+  (or (and (not (unquote-form? form))
+        (not (constructor-form? form))
+        (list? form)
+        (or (symbol? (first form))
+            (string? (first form))))
+      (and (list? form) (unquote-form? (first form)))))
 
-(defn- process-script [commands]
+(deftype WalkGuard [value])
+
+(defn- process-script-pass1 [commands]
   (walk/prewalk
    (fn [form]
      (cond
-       (unquote-form? form) (second form)
-       (constructor-form? form) (fully-qualify-constructor form)
-       (loop-form? form) (let [[_ [b coll] & commands] form]
-                           `(->Loop '~b (->EmbeddedCommand ~coll) ~(vec commands)))
-       (command-form? form) (concat (list 'nuka.script/command (str (first form)))
-                                    (map (fn [x] (if (symbol? x) '(clj (quote ~x)) x)) (rest form)))
-       :else form)) (vec commands)))
+       (unquote-form? form) (WalkGuard. (second form))
+       (constructor-form? form)
+       (fully-qualify-constructor form)
+
+       (loop-form? form)
+       (let [[_ [b coll] & commands] form]
+         `(->Loop '~b (->EmbeddedCommand ~coll) ~(vec commands)))
+
+       (command-form? form)
+       (concat (list 'nuka.script/command
+                     (if (unquote-form? (first form))
+                       (-> form first second)
+                       (str (first form))))
+               (map (fn [x] (cond (symbol? x) `'~x
+                                  (unquote-form? x) x
+                                  :else x)) (rest form)))
+       
+       :else
+       form)) (vec commands)))
+
+(defn- process-script-pass2 [commands]
+  (walk/postwalk
+   (fn [form]
+     (if (instance? WalkGuard form) (.value form) form)) commands))
+
+(defn- process-script [commands]
+  (-> commands process-script-pass1 process-script-pass2))
 
 (defmacro script [& commands]
   `(script*

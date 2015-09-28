@@ -45,4 +45,11 @@
   (is (= (->Script
           [(->Loop 'x (->EmbeddedCommand (->Command "ls" [])) [(->Command "echo" [(->Reference 'x)])])])
          (script (doseq [x (ls)] (echo x)))))
-  (is (= '[script (nuka.script/command "/tmp/script")] (process-script '(script ("/tmp/script")))))) 
+  (is (= '[script (nuka.script/command "/tmp/script")] (process-script '(script ("/tmp/script")))))
+  (is (= '[script (nuka.script/command s)] (process-script '(script (~s)))))
+  (is (= '[script (nuka.script/command
+                   "scp"
+                   (merge {:i id-file} options)
+                   (scp-file src)
+                   (scp-file dest))]
+         (process-script '(script (scp ~(merge {:i id-file} options) ~(scp-file src) ~(scp-file dest)))))))
