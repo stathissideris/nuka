@@ -7,6 +7,7 @@
 (def cms-dir "/Users/sideris/devel/work/moving-brands/mb-chauhan-phase2/cms/")
 
 (def java-render nuka.script.java/render)
+(def bash-render nuka.script.bash/render)
 (def render nuka.script.bash/render)
 
 (def base-machine
@@ -33,9 +34,10 @@
    :host "ec2-54-76-218-80.eu-west-1.compute.amazonaws.com"})
 
 (defn command-on [{:keys [name host user id-file] :as machine} scr]
-  (println (format "Running \"%s\" on machine \"%s\" (%s)" scr name host))
-  (let [s (-> (ssh {:i ~id-file} ~(str user "@" host) (q scr))
-              script java-render first)]
+  (let [scr (if (string? scr) scr (bash-render scr))
+        _   (println (format "Running \"%s\" on machine \"%s\" (%s)" scr name host))
+        s   (-> (ssh {:i ~id-file} ~(str user "@" host) (q scr))
+                script java-render first)]
     (run-command s)))
 
 (defn ping
@@ -51,6 +53,7 @@
     path))
 
 (defn scp [src dest & [options]]
+  (println (format "scp from %s to %s" (pr-str src) (pr-str dest)))
   (let [src (if (vector? src) src [nil src])
         dest (if (vector? dest) dest [nil dest])
         [src-machine src-file] src
@@ -59,6 +62,17 @@
         cmd (-> (scp ~(merge {:i id-file} options) ~(scp-file src) ~(scp-file dest))
                 script java-render first)]
     (run-command cmd)))
+
+(defn script-on [{:keys [name host user id-file] :as machine} scr]
+  (let [scr           (if (string? scr) scr (bash-render scr))
+        tmp-contents  (into #{} (>slurp (command-on testing-box (script (ls)))))
+        local-script  "/tmp/script" ;;TODO make unique
+        remote-script "/tmp/script" ;;TODO make unique
+        ]
+    (spit local-script scr)
+    (when (zero? (exit-code (scp "/tmp/script" [machine remote-script])))
+      (exit-code (command-on machine (script (chain-and (chmod (raw "+x") ~remote-script) (~remote-script)))))
+      (exit-code (command-on machine (script (rm ~remote-script)))))))
 
 (comment
   (-> (ls :i) script java-render first run-command >print)
@@ -75,11 +89,17 @@
   (kill slee)
   (exit-code slee)
 
-  (def re (command-on testing-box (-> (ls {:l true :a true}) script render)))
+  (def re (command-on testing-box (script (ls {:l true :a true}))))
   (>print re)
 
-  (>print (command-on testing-box (-> (ls {:l true :a true}) script render)))
-  (first (>slurp (command-on testing (-> (pwd) script render))))
+  (>print (command-on testing-box (script (ls {:l true :a true}))))
+  (first (>slurp (command-on testing (script (pwd)))))
 
   (>print (scp "/Users/sideris/Downloads/example.pdf" [testing "~/"]))
-  (>print (scp [testing "~/example.pdf"] "/Users/sideris/Downloads/example2.pdf")))
+  (>print (scp [testing "~/example.pdf"] "/Users/sideris/Downloads/example2.pdf"))
+
+  (def cc (script-on testing-box
+                     (script (touch "/tmp/foo3")
+                             (touch "/tmp/foo4"))))
+  
+  (>print (command-on testing-box (script (ls {:l true} "/tmp/")))))
