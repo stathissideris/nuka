@@ -1,37 +1,37 @@
 (ns nuka.script.java-test
   (:require [nuka.script.java :refer :all]
-            [nuka.script :refer [script]]
+            [nuka.script :refer [script call pipe chain-and chain-or block] :as s]
             [clojure.test :refer :all]))
 
 (deftest test-render
-  (is (= [["ls" "-i"]] (-> (ls :i) script render))))
+  (is (= [["ls" "-i"]] (-> (call :ls :i) script render))))
 
 (deftest test-render
-  (is (= [["ls" "-F"]] (render (script (ls [:F])))))
-  (is (= [["ls" "-F"]] (render (script (ls {:F true})))))
-  (is (= [["ls" "-F"]] (render (script (ls {:F true :X false})))))
-  (is (= [["ls" "-F" "my-folder"]] (render (script (ls [:F] "my-folder")))))
-  ;; (is (= "ls $(echo 'src/')" (render (script (ls (echo "src/"))))))
-  ;; (is (= "ls -F $(echo $(echo 'src/'))" (render (script (ls :F (echo (echo "src/")))))))
-  (is (= [["ls" "src/"]] (render (let [dir "src/"] (script (ls ~dir)))))) ;;unquoting supported!
-  (is (= [["ls" "src/"]] (render (let [dir "src/"] (script (ls (clj dir))))))) ;;also with clj
-  (is (= [["ls" "|" "grep" "foo"]] (render (script (pipe (ls) (grep "foo"))))))
-  (is (= [["ls" "&&" "grep" "foo"]] (render (script (chain-and (ls) (grep "foo"))))))
-  (is (= [["ls" "||" "grep" "foo"]] (render (script (chain-or (ls) (grep "foo"))))))
-  (is (= [["ping" "-o" "-t" "2" "54.76.218.80"]] (render (script (ping {:o true :t 2} "54.76.218.80")))))
+  (is (= [["ls" "-F"]] (render (script (call :ls [:F])))))
+  (is (= [["ls" "-F"]] (render (script (call :ls {:F true})))))
+  (is (= [["ls" "-F"]] (render (script (call :ls {:F true :X false})))))
+  (is (= [["ls" "-F" "-l" "-a"]] (render (script (call :ls {:F true :X false} nil :l nil :a)))))
+  (is (= [["ls" "-F" "my-folder"]] (render (script (call :ls [:F] "my-folder")))))
+  ;; (is (= "ls $(call :echo 'src/')" (render (script (call :ls (call :echo "src/"))))))
+  ;; (is (= "ls -F $(call :echo $(call :echo 'src/'))" (render (script (call :ls :F (call :echo (call :echo "src/")))))))
+  (is (= [["ls" "src/"]] (render (let [dir "src/"] (script (call :ls dir))))))
+  (is (= [["ls" "|" "grep" "foo"]] (render (script (pipe (call :ls) (call :grep "foo"))))))
+  (is (= [["ls" "&&" "grep" "foo"]] (render (script (chain-and (call :ls) (call :grep "foo"))))))
+  (is (= [["ls" "||" "grep" "foo"]] (render (script (chain-or (call :ls) (call :grep "foo"))))))
+  (is (= [["ping" "-o" "-t" "2" "54.76.218.80"]] (render (script (call :ping {:o true :t 2} "54.76.218.80")))))
   (is (= [["ssh" "-i" "id-file" "user@hehe.com" "ls"]]
-         (render (script (ssh {:i "id-file"} "user@hehe.com" "ls")))))
+         (render (script (call :ssh {:i "id-file"} "user@hehe.com" "ls")))))
   (comment
-    (is (= "for x in $(ls); do\n  echo $x\ndone" (render (script (doseq [x (ls)] (echo x))))))
+    (is (= "for x in $(ls); do\n  echo $x\ndone" (render (script (s/for ['x (call :ls)] (call :echo 'x))))))
     (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone"
-           (render (script (doseq [x (ls)] (echo (qq "foo: $x")))))))
+           (render (script (s/for [x (call :ls)] (call :echo (qq "foo: $x")))))))
     (is (= "for x in $(ls -F); do\n  echo 'foo:'\n  echo $x\ndone"
            (render
             (script
-             (doseq [x (ls :F)]
-               (echo "foo:")
-               (echo x))))))
+             (s/for ['x (call :ls :F)]
+               (call :echo "foo:")
+               (call :echo 'x))))))
     (is (= "rm 'file' || {echo 'Could not delete file!'; exit 1; }"
            (render (script
-                    (chain-or (rm "file")
-                              (block (echo "Could not delete file!") (exit 1)))))))))
+                    (chain-or (call :rm "file")
+                              (block (call :echo "Could not delete file!") (call :exit 1)))))))))

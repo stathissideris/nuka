@@ -7,8 +7,8 @@
             NumericArg
             Flag
             NamedArg
-            Command
-            EmbeddedCommand
+            Call
+            EmbeddedCall
             Script
             Raw
             Pipe
@@ -19,15 +19,16 @@
             InlineBlock]))
 
 (defmulti render class)
-(defmethod render Script [{:keys [commands]}] (string/join "\n" (map render commands)))
+(defmethod render nil [_] ::remove)
+(defmethod render Script [{:keys [commands]}] (str (string/join "\n" (map render commands)) "\n"))
 (defmethod render InlineBlock [{:keys [commands]}]
   (str "{" (apply str (interleave (map render commands) (repeat "; "))) "}"))
 (defmethod render Pipe [{:keys [commands]}] (string/join " | " (map render commands)))
 (defmethod render ChainAnd [{:keys [commands]}] (string/join " && " (map render commands)))
 (defmethod render ChainOr [{:keys [commands]}] (string/join " || " (map render commands)))
-(defmethod render Command [{:keys [cmd args]}] (let [args (string/join " " (map render args))]
+(defmethod render Call [{:keys [cmd args]}] (let [args (string/join " " (remove #(= % ::remove) (map render args)))]
                                                  (str cmd (when-not (empty? args) (str " " args)))))
-(defmethod render EmbeddedCommand [{:keys [cmd]}] (str "$(" (render cmd) ")"))
+(defmethod render EmbeddedCall [{:keys [cmd]}] (str "$(" (render cmd) ")"))
 (defmethod render Reference [{:keys [val]}] (str "$" val))
 (defmethod render Loop [{:keys [binding coll commands]}]
   (format "for %s in %s; do\n%s\ndone"

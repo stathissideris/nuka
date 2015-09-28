@@ -1,30 +1,30 @@
 (ns nuka.script.bash-test
   (:require [nuka.script.bash :refer :all]
-            [nuka.script :refer [script]]
+            [nuka.script :refer [script qq call pipe chain-and chain-or block] :as s]
             [clojure.test :refer :all]))
 
 (deftest test-render
-  (is (= "ls -F" (render (script (ls [:F])))))
-  (is (= "ls -F" (render (script (ls {:F true})))))
-  (is (= "ls -F" (render (script (ls {:F true :X false})))))
-  (is (= "ls -F 'my-folder'" (render (script (ls [:F] "my-folder")))))
-  (is (= "ls $(echo 'src/')" (render (script (ls (echo "src/"))))))
-  (is (= "ls -F $(echo $(echo 'src/'))" (render (script (ls :F (echo (echo "src/")))))))
-  (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls ~dir)))))) ;;unquoting supported!
-  (is (= "ls 'src/'" (render (let [dir "src/"] (script (ls (clj dir))))))) ;;also with clj
-  (is (= "ls | grep 'foo'" (render (script (pipe (ls) (grep "foo"))))))
-  (is (= "ls && grep 'foo'" (render (script (chain-and (ls) (grep "foo"))))))
-  (is (= "ls || grep 'foo'" (render (script (chain-or (ls) (grep "foo"))))))
-  (is (= "for x in $(ls); do\n  echo $x\ndone" (render (script (doseq [x (ls)] (echo x))))))
-  (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone"
-         (render (script (doseq [x (ls)] (echo (qq "foo: $x")))))))
-  (is (= "for x in $(ls -F); do\n  echo 'foo:'\n  echo $x\ndone"
+  (is (= "ls -F\n" (render (script (call :ls [:F])))))
+  (is (= "ls -F\n" (render (script (call :ls {:F true})))))
+  (is (= "ls -F\n" (render (script (call :ls {:F true :X false})))))
+  (is (= "ls -F -l -a\n" (render (script (call :ls {:F true :X false} nil :l nil :a)))))
+  (is (= "ls -F 'my-folder'\n" (render (script (call :ls [:F] "my-folder")))))
+  (is (= "ls $(echo 'src/')\n" (render (script (call :ls (call :echo "src/"))))))
+  (is (= "ls -F $(echo $(echo 'src/'))\n" (render (script (call :ls :F (call :echo (call :echo "src/")))))))
+  (is (= "ls 'src/'\n" (render (let [dir "src/"] (script (call :ls dir))))))
+  (is (= "ls | grep 'foo'\n" (render (script (pipe (call :ls) (call :grep "foo"))))))
+  (is (= "ls && grep 'foo'\n" (render (script (chain-and (call :ls) (call :grep "foo"))))))
+  (is (= "ls || grep 'foo'\n" (render (script (chain-or (call :ls) (call :grep "foo"))))))
+  (is (= "for x in $(ls); do\n  echo $x\ndone\n" (render (script (s/for ['x (call :ls)] (call :echo 'x))))))
+  (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone\n"
+         (render (script (s/for ['x (call :ls)] (call :echo (qq "foo: $x")))))))
+  (is (= "for x in $(ls -F); do\n  echo 'foo:'\n  echo $x\ndone\n"
          (render
           (script
-           (doseq [x (ls :F)]
-             (echo "foo:")
-             (echo x))))))
-  (is (= "rm 'file' || {echo 'Could not delete file!'; exit 1; }"
+           (s/for ['x (call :ls :F)]
+             (call :echo "foo:")
+             (call :echo 'x))))))
+  (is (= "rm 'file' || {echo 'Could not delete file!'; exit 1; }\n"
          (render (script
-                  (chain-or (rm "file")
-                            (block (echo "Could not delete file!") (exit 1))))))))
+                  (chain-or (call :rm "file")
+                            (block (call :echo "Could not delete file!") (call :exit 1))))))))
