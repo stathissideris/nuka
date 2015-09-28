@@ -1,5 +1,5 @@
 (ns nuka.core
-  (:require [nuka.exec :as exec :refer [run-command >print >slurp kill exit-code]]
+  (:require [nuka.exec :as exec :refer [run-command >print >slurp kill exit-code wait-for]]
             [nuka.script :as script :refer [script]]
             nuka.script.java
             nuka.script.bash))
@@ -71,8 +71,14 @@
         ]
     (spit local-script scr)
     (when (zero? (exit-code (scp "/tmp/script" [machine remote-script])))
-      (exit-code (command-on machine (script (chain-and (chmod (raw "+x") ~remote-script) (~remote-script)))))
-      (exit-code (command-on machine (script (rm ~remote-script)))))))
+      (let [code
+            (exit-code
+             (command-on
+              machine
+              (script (chain-and (chmod (raw "+x") ~remote-script)
+                                 (~remote-script)))))]
+        (wait-for (command-on machine (script (rm ~remote-script))))
+        code))))
 
 (comment
   (-> (ls :i) script java-render first run-command >print)

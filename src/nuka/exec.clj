@@ -86,6 +86,8 @@
   [{:keys [result-channel]}]
   (<!! result-channel))
 
+(def wait-for exit-code)
+
 (defn clean-up
   [{:keys [out err out-reader err-reader result-channel control]}]
   (doseq [c [out err result-channel control]]
