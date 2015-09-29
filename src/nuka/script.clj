@@ -1,5 +1,4 @@
 (ns nuka.script
-  (:refer-clojure :exclude [for])
   (:require [clojure.walk :as walk]))
 
 (defrecord SingleQuotedArg [val])
@@ -16,6 +15,9 @@
 (defrecord ChainOr [commands])
 (defrecord Reference [val])
 (defrecord Loop [binding coll commands])
+(defrecord IfThenElse [test then else])
+(defrecord Assignment [name value])
+(defrecord Function [name args commands])
 (defrecord InlineBlock [commands])
 
 (defn render-flag-name [f]
@@ -60,8 +62,17 @@
                          (let [parsed (parse-arg-set x)]
                            (if (seq? parsed) parsed [parsed]))) arg-sets))))
 
-(defn for [[binding coll] & commands]
+(defn for* [[binding coll] & commands]
   (->Loop binding (->EmbeddedCall coll) commands))
+
+(defn defn* [name args & commands]
+  (->Function name args commands))
+
+(defn if* [test then & [else]]
+  (->IfThenElse test then else))
+
+(defn def* [name value]
+  (->Assignment name (parse-arg-set value)))
 
 (defn pipe [& commands]
   (->Pipe commands))

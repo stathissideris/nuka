@@ -1,6 +1,6 @@
 (ns nuka.script.bash
   (:require [clojure.string :as string]
-            [nuka.script :refer [single-quote double-quote render-flag-name]])
+            [nuka.script :refer [single-quote double-quote render-flag-name def*]])
   (:import [nuka.script
             SingleQuotedArg
             DoubleQuotedArg
@@ -16,7 +16,18 @@
             ChainOr
             Reference
             Loop
-            InlineBlock]))
+            Assignment
+            InlineBlock
+            Function]))
+
+(defn lines [coll]
+  (string/join "\n" coll))
+
+(defn indent
+  ([line]
+   (indent 1 line))
+  ([x line]
+   (str (apply str (repeat x "  ")) line)))
 
 (defmulti render class)
 (defmethod render nil [_] ::remove)
@@ -30,11 +41,19 @@
                                                  (str cmd (when-not (empty? args) (str " " args)))))
 (defmethod render EmbeddedCall [{:keys [cmd]}] (str "$(" (render cmd) ")"))
 (defmethod render Reference [{:keys [val]}] (double-quote (str "$" val)))
+(defmethod render Assignment [{:keys [name value]}] (str "local " (str name) "=" (render value)))
 (defmethod render Loop [{:keys [binding coll commands]}]
   (format "for %s in %s; do\n%s\ndone"
           binding
           (render coll)
           (string/join "\n" (map #(str "  " (render %)) commands))))
+(defmethod render Function [{:keys [args commands] :as spec}]
+  (lines
+   (concat
+    [(str (name (:name spec)) "() {")]
+    (map-indexed (fn [i sym] (indent (render (def* sym (-> i inc str symbol))))) args)
+    (map (comp indent render) commands)
+    ["}"])))
 (defmethod render SingleQuotedArg [{:keys [val]}] (single-quote val))
 (defmethod render DoubleQuotedArg [{:keys [val]}] (double-quote val))
 (defmethod render NumericArg [{:keys [val]}] (str val))
