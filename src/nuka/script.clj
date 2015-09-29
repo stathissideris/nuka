@@ -112,3 +112,9 @@
 
 (defn double-quote [s]
   (str "\"" s "\""))
+
+(defn script? [x]
+  (instance? Script x))
+
+(defn call? [x]
+  (instance? Call x))

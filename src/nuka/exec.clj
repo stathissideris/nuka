@@ -1,29 +1,13 @@
 (ns nuka.exec
   (:require [clojure.string :as string]
-            [clojure.core.async :refer [go >! <! <!! >!! go-loop chan alts! alts!! close! timeout] :as async])
+            [clojure.core.async :refer [go >! <! <!! >!! go-loop chan alts! alts!! close! timeout] :as async]
+            [nuka.script :as script :refer [script call q chain-and raw script? call?]]
+            nuka.script.java)
   (:import [java.io InputStreamReader BufferedReader]))
 
 (defrecord SystemProcess [out err out-reader err-reader result-channel control])
 
-(comment
- (defn spool
-   "Take a sequence and puts each value on a channel and returns the channel.
-   If no channel is provided, an unbuffered channel is created. If the
-   sequence ends, the channel is closed."
-   ([s c]
-    (async/go
-      (loop [[f & r] s]
-        (if f
-          (do
-            (async/>! c f)
-            (recur r))
-          (async/close! c))))
-    c)
-   ([s]
-    (spool s (async/chan))))
-
- (defn read-line-channel [reader]
-   (spool (line-seq reader))))
+(def java-render nuka.script.java/render)
 
 (defn read-line-channel [reader]
   (let [c (chan 1024)]
@@ -60,8 +44,11 @@
           (recur))))
     c))
 
-(defn run-command [elements]
-  (let [p (-> (Runtime/getRuntime) (.exec (into-array String elements)))
+(defn run-command [cmd]
+  (let [elements (cond (sequential? cmd) cmd
+                       (call? cmd) (-> cmd script java-render first)
+                       (script? cmd) (-> cmd java-render first))
+        p (-> (Runtime/getRuntime) (.exec (into-array String elements)))
         out-reader (->> p .getInputStream InputStreamReader. BufferedReader.)
         out (read-line-channel out-reader)
         err-reader (->> p .getErrorStream InputStreamReader. BufferedReader.)
