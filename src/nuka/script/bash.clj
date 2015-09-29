@@ -29,7 +29,7 @@
 (defmethod render Call [{:keys [cmd args]}] (let [args (string/join " " (remove #(= % ::remove) (map render args)))]
                                                  (str cmd (when-not (empty? args) (str " " args)))))
 (defmethod render EmbeddedCall [{:keys [cmd]}] (str "$(" (render cmd) ")"))
-(defmethod render Reference [{:keys [val]}] (str "$" val))
+(defmethod render Reference [{:keys [val]}] (double-quote (str "$" val)))
 (defmethod render Loop [{:keys [binding coll commands]}]
   (format "for %s in %s; do\n%s\ndone"
           binding

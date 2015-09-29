@@ -1,6 +1,6 @@
 (ns nuka.script.bash-test
   (:require [nuka.script.bash :refer :all]
-            [nuka.script :refer [script qq call pipe chain-and chain-or block] :as s]
+            [nuka.script :refer [script qq call pipe chain-and chain-or block for' if'] :as s]
             [clojure.test :refer :all]))
 
 (deftest test-render
@@ -15,13 +15,13 @@
   (is (= "ls | grep 'foo'\n" (render (script (pipe (call :ls) (call :grep "foo"))))))
   (is (= "ls && grep 'foo'\n" (render (script (chain-and (call :ls) (call :grep "foo"))))))
   (is (= "ls || grep 'foo'\n" (render (script (chain-or (call :ls) (call :grep "foo"))))))
-  (is (= "for x in $(ls); do\n  echo $x\ndone\n" (render (script (s/for ['x (call :ls)] (call :echo 'x))))))
+  (is (= "for x in $(ls); do\n  echo \"$x\"\ndone\n" (render (script (for' ['x (call :ls)] (call :echo 'x))))))
   (is (= "for x in $(ls); do\n  echo \"foo: $x\"\ndone\n"
-         (render (script (s/for ['x (call :ls)] (call :echo (qq "foo: $x")))))))
-  (is (= "for x in $(ls -F); do\n  echo 'foo:'\n  echo $x\ndone\n"
+         (render (script (for' ['x (call :ls)] (call :echo (qq "foo: $x")))))))
+  (is (= "for x in $(ls -F); do\n  echo 'foo:'\n  echo \"$x\"\ndone\n"
          (render
           (script
-           (s/for ['x (call :ls :F)]
+           (for' ['x (call :ls :F)]
              (call :echo "foo:")
              (call :echo 'x))))))
   (is (= "rm 'file' || {echo 'Could not delete file!'; exit 1; }\n"
