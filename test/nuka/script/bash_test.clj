@@ -1,7 +1,7 @@
 (ns nuka.script.bash-test
   (:require [clojure.string :as string]
             [nuka.script.bash :refer :all]
-            [nuka.script :refer [script qq call pipe chain-and chain-or block for* if* def* defn*] :as s]
+            [nuka.script :refer [script qq call pipe chain-and chain-or block for* if* assign function bind] :as s]
             [clojure.test :refer :all]))
 
 (defn ex [& coll]
@@ -15,6 +15,9 @@
   (is (= "ls -F\n" (r (call :ls {:F true :X false}))))
   (is (= "ls -F -l -a\n" (r (call :ls {:F true :X false} nil :l nil :a))))
   (is (= "ls -F 'my-folder'\n" (r (call :ls [:F] "my-folder"))))
+  (is (= "ls -F 'my-folder'\n" (r (call :ls [:F] (list "my-folder")))))
+  (is (= "ls -F 'my-folder'\n" (r (call :ls {:F true} (list "my-folder")))))
+  (is (= "ls -F 'my-folder'\n" (r (call :ls (map identity [:F]) (list "my-folder")))))
   (is (= "ls $(echo 'src/')\n" (r (call :ls (call :echo "src/")))))
   (is (= "ls -F $(echo $(echo 'src/'))\n" (r (call :ls :F (call :echo (call :echo "src/"))))))
   (is (= "ls 'src/'\n" (render (let [dir "src/"] (script (call :ls dir))))))
@@ -24,7 +27,7 @@
   (is (= (ex
           "local x=5"
           "echo \"$x\"")
-         (r (def* 'x 5) (call :echo 'x))))
+         (r (assign 'x 5) (call :echo 'x))))
   (is (= (ex
           "for x in $(ls); do"
           "  echo \"$x\""
@@ -50,11 +53,24 @@
           "  echo \"$x\""
           "}"
           "foo 1 2 3")
-         (r (defn* :foo ['a 'b 'x]
+         (r (function :foo ['a 'b 'x]
               (call :echo 'a)
               (call :echo 'b)
               (call :echo 'x))
             (call :foo 1 2 3))))
+  (is (= (ex
+          "bind_block_000() {"
+          "  local a=\"$1\""
+          "  local b=\"$2\""
+          "  echo \"$a\""
+          "  echo \"$b\""
+          "}"
+          "bind_block_000 5 6")
+         (with-redefs [gensym (constantly "bind_block_000")]
+           (r (bind ['a 5 'b 6]
+                    (call :echo 'a)
+                    (call :echo 'b))))))
   (is (= "rm 'file' || {echo 'Could not delete file!'; exit 1; }\n"
          (r (chain-or (call :rm "file")
-                      (block (call :echo "Could not delete file!") (call :exit 1)))))))
+                      (block (call :echo "Could not delete file!") (call :exit 1))))))
+  )

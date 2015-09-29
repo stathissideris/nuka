@@ -32,14 +32,15 @@
               (str "--" s)))))))
 
 (defmulti parse-arg-set
-  (fn [x] (cond (record? x) (class x)
-                (map? x) :map
-                (vector? x) :vector
-                (string? x) :string
-                (keyword? x) :keyword
-                (number? x) :number
-                (symbol? x) :symbol
-                :else :default)))
+  (fn [x] (cond (record? x)      (class x)
+                (map? x)         :map
+                (or (seq? x)
+                    (vector? x)) :seq
+                (string? x)      :string
+                (keyword? x)     :keyword
+                (number? x)      :number
+                (symbol? x)      :symbol
+                :else            :default)))
 
 (defmethod parse-arg-set :default [x] x)
 (defmethod parse-arg-set Call [x] (->EmbeddedCall x))
@@ -47,7 +48,7 @@
 (defmethod parse-arg-set :string [s] (SingleQuotedArg. s))
 (defmethod parse-arg-set :number [x] (NumericArg. x))
 (defmethod parse-arg-set :keyword [k] (Flag. k))
-(defmethod parse-arg-set :vector [v] (map parse-arg-set v))
+(defmethod parse-arg-set :seq [v] (map parse-arg-set v))
 (defmethod parse-arg-set :map [m]
   (mapcat (fn [[k v]] (cond (true? v)   [(Flag. k)] ;;keys with true values are just flags
                             (false? v)  [] ;;keys with false values are skipped
@@ -57,21 +58,32 @@
 (defn raw [x] (->Raw x))
 
 (defn call [cmd & arg-sets]
-  (let [cmd (if (keyword? cmd) (name cmd) cmd)]
-   (->Call cmd (mapcat (fn [x]
-                         (let [parsed (parse-arg-set x)]
-                           (if (seq? parsed) parsed [parsed]))) arg-sets))))
+  (->Call cmd (mapcat (fn [x]
+                        (let [parsed (parse-arg-set x)]
+                          (if (seq? parsed) parsed [parsed]))) arg-sets)))
 
 (defn for* [[binding coll] & commands]
   (->Loop binding (->EmbeddedCall coll) commands))
 
-(defn defn* [name args & commands]
+(defn function [name args & commands]
   (->Function name args commands))
+
+(defn splice-vector-commands [coll]
+  (mapcat #(if (sequential? %) % [%]) coll))
+
+(defn block [& commands]
+  (->InlineBlock (splice-vector-commands commands)))
+
+(defn bind [bindings & commands]
+  (let [bindings   (partition 2 bindings)
+        block-name (gensym "bind_block_")]
+    [(apply function block-name (mapv first bindings) commands)
+     (call block-name (mapv second bindings))]))
 
 (defn if* [test then & [else]]
   (->IfThenElse test then else))
 
-(defn def* [name value]
+(defn assign [name value]
   (->Assignment name (parse-arg-set value)))
 
 (defn pipe [& commands]
@@ -83,9 +95,6 @@
 (defn chain-or [& commands]
   (->ChainOr commands))
 
-(defn block [& commands]
-  (->InlineBlock commands))
-
 (defn q [s]
   (->SingleQuotedArg s))
 
@@ -96,7 +105,7 @@
   (->Raw s))
 
 (defn script [& commands]
-  (->Script commands))
+  (->Script (splice-vector-commands commands)))
 
 (defn single-quote [s]
   (str "'" s "'"))

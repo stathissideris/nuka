@@ -18,6 +18,11 @@
             Loop
             InlineBlock]))
 
+(defn mangle-id [x]
+  (if (string? x)
+    x
+    (string/replace (name x) "-" "_")))
+
 (defmulti render class)
 (defmethod render nil [_] ::remove)
 (defmethod render Script [{:keys [commands]}] (map render commands))
@@ -26,7 +31,7 @@
 (defmethod render Pipe [{:keys [commands]}] (flatten (interpose "|" (map render commands))))
 (defmethod render ChainAnd [{:keys [commands]}] (flatten (interpose "&&" (map render commands))))
 (defmethod render ChainOr [{:keys [commands]}] (flatten (interpose "||" (map render commands))))
-(defmethod render Call [{:keys [cmd args]}] (cons cmd (remove #(= % ::remove) (flatten (map render args)))))
+(defmethod render Call [{:keys [cmd args]}] (cons (mangle-id cmd) (remove #(= % ::remove) (flatten (map render args)))))
 (defmethod render EmbeddedCall [{:keys [cmd]}] ["$(" (render cmd) ")"])
 (defmethod render Reference [{:keys [val]}] (str "$" val))
 (defmethod render Loop [{:keys [binding coll commands]}]
