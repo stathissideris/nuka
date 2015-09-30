@@ -36,7 +36,7 @@
 
 (defmulti render class)
 (defmethod render nil [_] ::remove)
-(defmethod render Script [{:keys [commands]}] (str (string/join "\n" (map render commands)) "\n"))
+(defmethod render Script [{:keys [commands]}] (string/join "\n" (map render commands)))
 (defmethod render InlineBlock [{:keys [commands]}]
   (str "{" (apply str (interleave (map render commands) (repeat "; "))) "}"))
 (defmethod render Pipe [{:keys [commands]}] (string/join " | " (map render commands)))

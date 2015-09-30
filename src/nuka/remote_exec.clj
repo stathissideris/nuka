@@ -9,17 +9,17 @@
 (def bash-render nuka.script.bash/render)
 
 (defn command-on
-  "Runs a command on the passed machine. scr can be a string
+  "Runs a command on the passed machine via ssd. scr can be a string
   containing the code, a Script record or a single Call record."
   ([machine scr]
    (command-on machine scr {}))
   ([{:keys [name host user id-file] :as machine} scr ssh-params]
    (let [scr (cond (string? scr) scr
                    (call? scr)   (bash-render (script scr))
-                   (script? scr) (bash-render scr))
-         _   (println (format "Running \"%s\" on machine \"%s\" (%s)" scr name host))
-         s   (run-command (call :ssh {:i id-file} ssh-params (str user "@" host) (q scr)))]
-     (run-command s))))
+                   (script? scr) (bash-render scr)
+                   :else         (throw (ex-info "Could not process passed script" {:script scr})))]
+     (println (format "Running \"%s\" on machine \"%s\" (%s)" scr name host))
+     (run-command (call :ssh {:i id-file} ssh-params (str user "@" host) (q scr))))))
 
 (defn script-on
   "Runs the passed script on the machine. Steps taken: scp passed

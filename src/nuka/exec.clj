@@ -46,8 +46,11 @@
 
 (defn run-command [cmd]
   (let [elements (cond (sequential? cmd) cmd
-                       (call? cmd) (-> cmd script java-render first)
-                       (script? cmd) (-> cmd java-render first))
+                       (call? cmd)       (-> cmd script java-render first)
+                       (script? cmd)     (-> cmd java-render first)
+                       :else             (throw (ex-info (str "Could not process passed command of type "
+                                                              (.getName (type cmd)))
+                                                         {:script cmd})))
         p (-> (Runtime/getRuntime) (.exec (into-array String elements)))
         out-reader (->> p .getInputStream InputStreamReader. BufferedReader.)
         out (read-line-channel out-reader)
@@ -115,12 +118,22 @@
         (println "END:" cmd))))
   nil)
 
+(defn >no-err [process]
+  (close! (:err process))
+  process)
+
 (defn >slurp [{:keys [cmd out err]}]
-  (let [m (tagged-merge [out err])]
-    (<!!
-     (go-loop [lines []]
-       (let [[line c] (<! m)]
-         (cond
-           (= c out) (recur (conj lines line))
-           (= c err) (throw (ex-info (str "Error while running system command:" line) {:error err :cmd cmd}))
-           :else lines))))))
+  (let [m (tagged-merge [out err])
+        val
+        (<!!
+         (go-loop [lines []]
+           (let [[line c] (<! m)]
+             (cond
+               (= c out) (recur (conj lines line))
+               (= c err) (ex-info
+                          (str "Error while running system command: " line)
+                          {:error err :cmd cmd}) ;;don't throw, just create it
+               :else lines))))]
+    (if (ex-data val)
+      (throw val)
+      val)))
