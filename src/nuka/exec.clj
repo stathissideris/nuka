@@ -147,7 +147,7 @@
                (= c out) (recur (conj lines line))
                (= c err) (ex-info
                           (str "Error while running system command: " line)
-                          {:error err :cmd cmd}) ;;don't throw, just create it
+                          {:error err :cmd cmd}) ;;don't throw, just create it, otherwise it will be silent
                :else lines))))]
     (if (ex-data val)
       (throw val)
