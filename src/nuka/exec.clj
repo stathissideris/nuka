@@ -122,6 +122,21 @@
   (close! (:err process))
   process)
 
+(defn closed-chan []
+  (let [c (chan)]
+    (close! c)
+    c))
+
+(defn >err->out [process]
+  (assoc process
+         :out (async/merge [(:out process) (:err process)])
+         :err (closed-chan)))
+
+(defn >out->err [process]
+  (assoc process
+         :out (closed-chan)
+         :err (async/merge [(:err process) (:out process)])))
+
 (defn >slurp [{:keys [cmd out err]}]
   (let [m (tagged-merge [out err])
         val
