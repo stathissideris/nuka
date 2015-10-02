@@ -9,5 +9,5 @@
 
   :pedantic? :abort
   
-  :profiles {:dev {:source-paths ["dev"]
+  :profiles {:dev {:source-paths ["dev" "examples"]
                    :dependencies [[org.clojure/tools.namespace "0.2.11"]]}})
