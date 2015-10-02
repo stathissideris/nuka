@@ -3,6 +3,11 @@
             [nuka.exec :as exec :refer [run-command run-script >no-err >print kill exit-code]]
             [nuka.script :as script :refer [script call q raw pipe]]))
 
+;;The weird options in awk and grep are there because they buffer
+;;their output and you wouldn't get anything printed.
+;;
+;;See http://www.perkin.org.uk/posts/how-to-fix-stdio-buffering.html
+
 (defn awk [code]
   (run-command (script (call :awk (q (format "{%s; system(\"\")}" code))))))
 
