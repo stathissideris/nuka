@@ -144,7 +144,7 @@
            (close! out)))
        out)))
 
-(defn >print [{:keys [cmd out err]}]
+(defn >print [{:keys [cmd out err] :as process}]
   (println "CMD:" cmd)
   (let [m (tagged-merge [out err])]
     (go-loop []
@@ -155,7 +155,7 @@
             (println "ERR:" line))
           (recur))
         (println "END:" cmd))))
-  nil)
+  process)
 
 (defn >no-err [process]
   (close! (:err process))
