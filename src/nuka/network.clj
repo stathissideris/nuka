@@ -2,6 +2,9 @@
   (:require [nuka.exec :as exec :refer [run-command exit-code >print]]
             [nuka.script :as script :refer [call]]))
 
+(defn ssh* [{:keys [host user id-file] :as machine} & [ssh-params]]
+  (call :ssh {:i id-file} ssh-params (str user "@" host)))
+
 (defn ping
   ([host timeout]
    (let [host (if (map? host) (:host host) host)
