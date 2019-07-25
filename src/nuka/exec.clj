@@ -65,8 +65,8 @@
 
 (defn run-command [cmd]
   (let [elements   (cond (sequential? cmd) cmd
-                         (call? cmd)       (-> cmd script java-render first)
-                         (script? cmd)     (-> cmd java-render first)
+                         (call? cmd)       (-> cmd script java-render)
+                         (script? cmd)     (-> cmd java-render)
                          :else             (throw (ex-info (str "Could not process passed command of type "
                                                                 (.getName (type cmd)))
                                                            {:script cmd})))
@@ -79,15 +79,15 @@
         ;;in-writer  (-> p .getOutputStream)
         in         (write-line-channel in-writer)]
     (map->SystemProcess
-     {:cmd (pr-str elements)
-      :in  in
-      :out out
-      :err err
-      :in-writer  in-writer
-      :out-reader out-reader
-      :err-reader err-reader
+     {:cmd            elements
+      :in             in
+      :out            out
+      :err            err
+      :in-writer      in-writer
+      :out-reader     out-reader
+      :err-reader     err-reader
       :result-channel (process-exit-channel p)
-      :control (process-control-channel p)})))
+      :control        (process-control-channel p)})))
 
 (defn clean-up
   [{:keys [in out err in-writer out-reader err-reader result-channel control]}]

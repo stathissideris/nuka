@@ -65,3 +65,6 @@
 (defmethod render Raw [{:keys [val]}] val)
 (defmethod render Flag [{:keys [val]}] (render-flag-name val))
 (defmethod render NamedArg [{:keys [name val]}] (str (render-flag-name name) " " (render val)))
+
+(defn render-command-sequence [commands]
+  (apply str (interpose "; " (map render commands))))

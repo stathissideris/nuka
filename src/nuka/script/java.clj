@@ -1,6 +1,8 @@
 (ns nuka.script.java
   (:require [clojure.string :as string]
-            [nuka.script :refer [render-flag-name]])
+            [nuka.script.bash :as bash]
+            [nuka.script :as script :refer [render-flag-name]]
+            [clojure.string :as str])
   (:import [nuka.script
             SingleQuotedArg
             DoubleQuotedArg
@@ -23,9 +25,10 @@
     x
     (string/replace (name x) "-" "_")))
 
+
 (defmulti render class)
 (defmethod render nil [_] ::remove)
-(defmethod render Script [{:keys [commands]}] (map render commands))
+(defmethod render Script [{:keys [commands]}] ["/bin/sh" "-c" (bash/render-command-sequence commands)])
 (defmethod render InlineBlock [{:keys [commands]}]
   (str "{" (apply str (interleave (map render commands) (repeat "; "))) "}"))
 (defmethod render Pipe [{:keys [commands]}] (flatten (interpose "|" (map render commands))))
