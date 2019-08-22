@@ -3,7 +3,8 @@
             [clojure.core.async :refer [go >! <! <!! >!! go-loop chan alts! alts!! close! timeout] :as async]
             [nuka.script :as script :refer [script call q chain-and raw script? call?]]
             [nuka.script.java]
-            [nuka.script.bash])
+            [nuka.script.bash]
+            [clojure.term.colors :as c])
   (:import [java.io InputStreamReader BufferedReader OutputStreamWriter BufferedWriter PrintWriter]))
 
 (defrecord SystemProcess [out err out-reader err-reader result-channel control])
@@ -110,7 +111,26 @@
   [{:keys [result-channel]}]
   (<!! result-channel))
 
-(def wait-for exit-code)
+(defn wait-for
+  ([proc]
+   (wait-for proc {:zero-throw false}))
+  ([proc {:keys [zero-throw]}]
+   (if-not (sequential? proc)
+     (wait-for [proc])
+     (loop [cs proc
+            vs []]
+       (let [[v p]   (async/alts!! (map :result-channel cs))
+             process (as-> cs $
+                       (filter #(= p (:result-channel %)) $)
+                       (first $)
+                       (assoc $ :exit-code v))
+             _       (when (and zero-throw (not (zero? v)))
+                       (throw (ex-info "Process failed!" process)))
+             cs      (filterv #(not= p (:result-channel %)) cs)
+             vs      (conj vs process)]
+         (if (seq cs)
+           (recur cs vs)
+           vs))))))
 
 (defn run-script [scr]
   (let [scr          (if (string? scr) scr (bash-render scr))
@@ -144,18 +164,22 @@
            (close! out)))
        out)))
 
-(defn >print [{:keys [cmd out err] :as process}]
-  (println "CMD:" cmd)
-  (let [m (tagged-merge [out err])]
-    (go-loop []
-      (if-let [[line c] (<! m)]
-        (do
-          (if (= c out)
-            (println "OUT:" line)
-            (println "ERR:" line))
-          (recur))
-        (println "END:" cmd))))
-  process)
+(defn >print
+  ([process]
+   (>print process nil))
+  ([{:keys [cmd out err] :as process}
+    {:keys [color] :or {color true}}]
+   (println (c/magenta "CMD:" cmd))
+   (let [m (tagged-merge [out err])]
+     (go-loop []
+       (if-let [[line c] (<! m)]
+         (do
+           (if (= c out)
+             (println (c/white line))
+             (println (c/red line)))
+           (recur))
+         (println (c/magenta "END:" cmd)))))
+   process))
 
 (defn >no-err [process]
   (close! (:err process))
