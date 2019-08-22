@@ -90,6 +90,8 @@
       :result-channel (process-exit-channel p)
       :control        (process-control-channel p)})))
 
+(def exec run-command)
+
 (defn clean-up
   [{:keys [in out err in-writer out-reader err-reader result-channel control]}]
   (doseq [c [in out err result-channel control]]
@@ -111,7 +113,7 @@
   [{:keys [result-channel]}]
   (<!! result-channel))
 
-(defn wait-for
+(defn wait
   ([proc]
    (wait-for proc {:zero-throw false}))
   ([proc {:keys [zero-throw]}]

@@ -24,6 +24,8 @@
         (call :ssh {:i id-file} ssh-params (str user "@" host) (q scr))
         (call :ssh ssh-params (str user "@" host) (q scr)))))))
 
+(def exec command-on)
+
 (defn script-on
   "Runs the passed script on the machine. Steps taken: scp passed
   script, chmod it to be executable, execute it via ssh, wait for it
