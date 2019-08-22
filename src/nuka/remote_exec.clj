@@ -19,7 +19,10 @@
                    (script? scr) (bash-render scr)
                    :else         (throw (ex-info "Could not process passed script" {:script scr})))]
      (println (format "Running \"%s\" on machine \"%s\" (%s)" scr name host))
-     (run-command (call :ssh {:i id-file} ssh-params (str user "@" host) (q scr))))))
+     (run-command
+      (if id-file
+        (call :ssh {:i id-file} ssh-params (str user "@" host) (q scr))
+        (call :ssh ssh-params (str user "@" host) (q scr)))))))
 
 (defn script-on
   "Runs the passed script on the machine. Steps taken: scp passed
