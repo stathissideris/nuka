@@ -1,5 +1,5 @@
 (ns nuka.core
-  (:require [nuka.exec :as exec :refer [run-command >print >slurp >no-err >err->out kill exit-code wait-for]]
+  (:require [nuka.exec :as exec :refer [run-command >print >slurp >no-err >err->out kill exit-code wait]]
             [nuka.script :as script :refer [script call q chain-and raw]]
             [nuka.network :refer [ping scp]]
             [nuka.remote-exec :refer [command-on script-on]]))
@@ -35,15 +35,15 @@
 
 (comment
   ;;local execution
-  
+
   (-> (call :ls :i) run-command >print)
   (-> (call :whoami) run-command >slurp first)
   (-> (call :seq 3) run-command >slurp)
 
   (-> (script (call :ls :i)) run-command >print)
-  
+
   (-> (call :ls :l :F) run-command >slurp)
-  
+
   (ping testing-box 1)
 
   (def slee (-> (call :sleep 10) run-command))
@@ -52,7 +52,7 @@
   (exit-code slee)
 
   ;;remote execution
-  
+
   (def re (command-on testing-box (call :ls {:l true :a true})))
   (>print re)
 
@@ -65,11 +65,11 @@
   ;;>slurp fails if there is anything in stderr, and the no-auth
   ;;options can print a warning to stderr, so we ignore it before
   ;;piping the process to >slurp
-  (-> (command-on testing-box (call :ls :l :a) ssh-no-authenticity) >no-err >slurp) 
+  (-> (command-on testing-box (call :ls :l :a) ssh-no-authenticity) >no-err >slurp)
 
   ;;...or you can redirect err to out and collect all lines:
   (-> (command-on testing-box (call :ls :l :a) ssh-no-authenticity) >err->out >slurp)
-  
+
   (>print (scp "/Users/sideris/Downloads/example.pdf" [testing-box "~/example3.pdf"]))
   (>print (scp [testing-box "~/example3.pdf"] "/Users/sideris/Downloads/example4.pdf"))
 
@@ -77,5 +77,5 @@
                      (script
                       (call :touch "/tmp/foo1")
                       (call :touch "/tmp/foo2"))))
-  
+
   (>print (command-on testing-box (script (call :ls {:l true} "/tmp/")))))

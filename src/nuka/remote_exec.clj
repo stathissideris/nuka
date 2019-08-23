@@ -1,5 +1,5 @@
 (ns nuka.remote-exec
-  (:require [nuka.exec :as exec :refer [run-command >slurp exit-code wait-for]]
+  (:require [nuka.exec :as exec :refer [run-command >slurp exit-code wait]]
             [nuka.script :as script :refer [script call q chain-and raw call? script?]]
             [nuka.network :as net]
             nuka.script.bash))
@@ -50,6 +50,6 @@
               (script (chain-and (call :chmod (raw "+x") remote-script)
                                  (call remote-script)))
               ssh-params)]
-         (wait-for process)
-         (wait-for (command-on machine (call :rm remote-script) ssh-params))
+         (wait process)
+         (wait (command-on machine (call :rm remote-script) ssh-params))
          process)))))

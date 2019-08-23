@@ -115,10 +115,10 @@
 
 (defn wait
   ([proc]
-   (wait-for proc {:zero-throw false}))
+   (wait proc {:zero-throw false}))
   ([proc {:keys [zero-throw]}]
    (if-not (sequential? proc)
-     (wait-for [proc])
+     (wait [proc])
      (loop [cs proc
             vs []]
        (let [[v p]   (async/alts!! (map :result-channel cs))
@@ -139,7 +139,7 @@
         local-script "/tmp/script" ;;TODO make unique
         ]
     (spit local-script (str scr "\n"))
-    (wait-for (run-command (call :chmod (raw "+x") local-script)))
+    (wait (run-command (call :chmod (raw "+x") local-script)))
     (println "Running script:")
     (println scr)
     (let [process (run-command (call local-script))]
