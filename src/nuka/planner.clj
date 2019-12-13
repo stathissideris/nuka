@@ -25,8 +25,30 @@
   [g]
   (remove (comp not-empty (graph/successors g)) (graph/nodes g)))
 
-(defn next-phase [g]
-  (apply graph/remove-nodes g (leaves g)))
+(defn next-phase
+  "Returns all the tasks that can be performed after the current
+  phase. The current phase is either all the current leaf tasks or the
+  passed done-tasks."
+  ([g]
+   (next-phase g (leaves g)))
+  ([g done-tasks]
+   (apply graph/remove-nodes g done-tasks)))
+
+(defn empty-graph? [g]
+  (empty? (graph/nodes g)))
+
+(defn phases
+  "Returns a lazy lists of sets representing the phases of the plan if
+  all the tasks in each phase were to last an equal time."
+  [g]
+  (when-not (empty-graph? g)
+    (cons (set (leaves g)) (lazy-seq (phases (next-phase g))))))
+
+(defn rand-task
+  "Picks a random task out of the tasks that can be executed (one that
+  has no dependencies)."
+  [g]
+  (rand-nth (leaves g)))
 
 (def g1-next (next-phase g1))
 
