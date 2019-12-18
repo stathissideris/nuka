@@ -66,22 +66,22 @@
      (loop [g           graph
             in-progress #{}
             results     {}]
-       (let [free (->> (set/difference
-                        (->> g free-tasks (take threads) set)
-                        in-progress)
-                       (map (partial task-spec g)))]
-         (if (= (set (keys results)) (graph/nodes graph))
-           (do
-             (println "Task graph done!")
-             results)
-           (do
-             (submit-all! pool out results free)
-             (let [{:keys [id result]} (a/<!! out)]
-               (println "Task" id "done")
-               (recur
-                (next-graph g [id])
-                (set/union in-progress (set (map :id free)))
-                (assoc results id result))))))))))
+       (if (= (set (keys results)) (graph/nodes graph))
+         (do
+           (println "Task graph done!")
+           results)
+         (let [free (->> (set/difference
+                          (->> g free-tasks set)
+                          in-progress)
+                         (take threads)
+                         (map (partial task-spec g)))]
+           (submit-all! pool out results free)
+           (let [{:keys [id result]} (a/<!! out)]
+             (println "Task" id "done")
+             (recur
+              (next-graph g [id])
+              (set/union in-progress (set (map :id free)))
+              (assoc results id result)))))))))
 
 (comment
   (defn dummy-fn [msg]
