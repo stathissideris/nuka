@@ -45,7 +45,6 @@
                                  :as      task}]
   (when-not function
     (throw (ex-info "Task has no function" task)))
-  ;;(println "Task" id "started")
   (.submit pool (fn [] (a/>!! out (merge task {:result (function results)})))))
 
 (defn submit-all! [pool out results tasks]
@@ -61,7 +60,7 @@
            :or   {threads 4}}]
    (let [graph (tasks->graph tasks)
          _     (when (has-cycles? graph)
-                 (throw (ex-info "Task graph has cycles" tasks)))
+                 (throw (ex-info "Task graph has cycles" tasks))) ;;TODO more validation
          pool  (Executors/newFixedThreadPool threads)
          out   (a/chan)]
      (loop [g           graph
