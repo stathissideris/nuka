@@ -61,6 +61,7 @@
   (->Call cmd (mapcat (fn [x]
                         (let [parsed (parse-arg-set x)]
                           (if (seq? parsed) parsed [parsed]))) arg-sets)))
+(def cmd call)
 
 (defn for* [[binding coll] & commands]
   (->Loop binding (->EmbeddedCall coll) commands))
