@@ -4,7 +4,8 @@
             [loom.alg-generic :as generic]
             [loom.io :refer [view]]
             [loom.attr :as attr]
-            [clojure.core.async :as a])
+            [clojure.core.async :as a]
+            [clojure.set :as set])
   (:import [java.util.concurrent Executors]))
 
 (def g1 (graph/digraph
@@ -45,10 +46,10 @@
 
 (defn dummy-fn [msg]
   (fn [in]
-    (let [x (rand-int 2000)]
+    (let [x (+ 1000 (rand-int 2000))]
       (Thread/sleep x)
-      (println msg "done")
-      x)))
+      {:duration x
+       :in in})))
 
 (defn task-spec [g id]
   (assoc (attr/attr g id ::spec)
@@ -58,43 +59,35 @@
 (defn submit! [pool out results {:keys    [id]
                                 function :fn
                                 :as      task}]
-  (println "Running task" id)
+  (println "Task" id "started")
   (.submit pool (fn [] (a/>!! out (merge task {:result (function results)})))))
 
 (defn submit-all! [pool out results tasks]
   (doseq [t tasks]
     (submit! pool out results t)))
 
-(defn drain! [ch n]
-  (when (pos? n)
-    (prn (a/<!! ch))
-    (recur ch (dec n))))
-
-(defn chan-to-vec [ch n]
-  (loop [res []
-         n   n]
-    (if (pos? n)
-      (recur (conj res (a/<!! ch)) (dec n))
-      res)))
-
-(defn execute [g {:keys [threads]}]
+(defn execute [graph {:keys [threads]}]
   (let [pool (Executors/newFixedThreadPool threads)
         out  (a/chan)]
-
-    (loop [g       g
-           results {}]
-      (prn {:results results})
-      (let [free (map (partial task-spec g) (take threads (free-tasks g)))]
-        (if (empty-graph? g)
-          (println "Done!")
+    (loop [g                 graph
+           in-progress #{}
+           results           {}]
+      (let [free (->> (set/difference
+                       (->> g free-tasks (take threads) set)
+                       in-progress)
+                      (map (partial task-spec g)))]
+        (if (= (set (keys results)) (graph/nodes graph))
+          (do
+            (println "Task graph done!")
+            results)
           (do
             (submit-all! pool out results free)
-            ;;(drain! out (count free))
-            (recur (next-graph g (map :id free))
-                   (->> (chan-to-vec out (count free))
-                        (map (juxt :id :result))
-                        (into {})
-                        (merge results)))))))))
+            (let [{:keys [id result]} (a/<!! out)]
+              (println "Task" id "done")
+              (recur
+               (next-graph g [id])
+               (set/union in-progress (set (map :id free)))
+               (assoc results id result)))))))))
 
 ;; (comment
 ;;   (def g1-next (next-phase g1))
