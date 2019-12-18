@@ -45,12 +45,14 @@
                                  :as      task}]
   (when-not function
     (throw (ex-info "Task has no function" task)))
-  (println "Task" id "started")
+  ;;(println "Task" id "started")
   (.submit pool (fn [] (a/>!! out (merge task {:result (function results)})))))
 
 (defn submit-all! [pool out results tasks]
-  (doseq [t tasks]
-    (submit! pool out results t)))
+  (when (seq tasks)
+    (println "Starting" (pr-str (map :id tasks)))
+    (doseq [t tasks]
+      (submit! pool out results t))))
 
 (defn execute
   ([tasks]
@@ -82,44 +84,36 @@
                 (set/union in-progress (set (map :id free)))
                 (assoc results id result))))))))))
 
-(def g1 (graph/digraph
-         [1 2]
-         [2 3]
-         {3 [4]
-          5 [6 7]}
-         [7 10]
-         [6 10]
-         7 8 9))
+(comment
+  (defn dummy-fn [msg]
+    (fn dummy-inner [in]
+      (let [x (+ 1000 (rand-int 2000))]
+        (Thread/sleep x)
+        {:duration x
+         :in in})))
 
-(defn dummy-fn [msg]
-  (fn dummy-inner [in]
-    (let [x (+ 1000 (rand-int 2000))]
-      (Thread/sleep x)
-      {:duration x
-       :in in})))
+  (def g2
+    {:tasks
+     {:a {:deps [:b :c]
+          :fn   (dummy-fn :a)}
+      :b {:deps [:d]
+          :fn   (dummy-fn :b)}
+      :c {:deps [:d]
+          :fn   (dummy-fn :c)}
+      :d {:fn (dummy-fn :d)}
 
-(def g2
-  {:tasks
-   {:a {:deps [:b :c]
-        :fn   (dummy-fn :a)}
-    :b {:deps [:d]
-        :fn   (dummy-fn :b)}
-    :c {:deps [:d]
-        :fn   (dummy-fn :c)}
-    :d {:fn (dummy-fn :d)}
+      :e {:deps [:f]
+          :fn   (dummy-fn :e)}
+      :f {:deps [:g]
+          :fn   (dummy-fn :f)}
+      :g {:deps [:h]
+          :fn   (dummy-fn :g)}
+      :h {:fn (dummy-fn :h)}
 
-    :e {:deps [:f]
-        :fn   (dummy-fn :e)}
-    :f {:deps [:g]
-        :fn   (dummy-fn :f)}
-    :g {:deps [:h]
-        :fn   (dummy-fn :g)}
-    :h {:fn (dummy-fn :h)}
+      :i {:fn (dummy-fn :i)}
+      :j {:fn (dummy-fn :j)}}})
 
-    :i {:fn (dummy-fn :i)}
-    :j {:fn (dummy-fn :j)}}})
-
-(def c1 (graph/digraph [1 2] [2 3] [3 4] [4 1]))
+  (execute g2))
 
 
 ;; (comment
