@@ -52,31 +52,35 @@
   (doseq [t tasks]
     (submit! pool out results t)))
 
-(defn execute [tasks {:keys [threads]}]
-  (let [graph (tasks->graph tasks)
-        _     (when (has-cycles? graph)
-                (throw (ex-info "Task graph has cycles" tasks)))
-        pool  (Executors/newFixedThreadPool threads)
-        out   (a/chan)]
-    (loop [g           graph
-           in-progress #{}
-           results     {}]
-      (let [free (->> (set/difference
-                       (->> g free-tasks (take threads) set)
-                       in-progress)
-                      (map (partial task-spec g)))]
-        (if (= (set (keys results)) (graph/nodes graph))
-          (do
-            (println "Task graph done!")
-            results)
-          (do
-            (submit-all! pool out results free)
-            (let [{:keys [id result]} (a/<!! out)]
-              (println "Task" id "done")
-              (recur
-               (next-graph g [id])
-               (set/union in-progress (set (map :id free)))
-               (assoc results id result)))))))))
+(defn execute
+  ([tasks]
+   (execute tasks nil))
+  ([tasks {:keys [threads]
+           :or   {threads 4}}]
+   (let [graph (tasks->graph tasks)
+         _     (when (has-cycles? graph)
+                 (throw (ex-info "Task graph has cycles" tasks)))
+         pool  (Executors/newFixedThreadPool threads)
+         out   (a/chan)]
+     (loop [g           graph
+            in-progress #{}
+            results     {}]
+       (let [free (->> (set/difference
+                        (->> g free-tasks (take threads) set)
+                        in-progress)
+                       (map (partial task-spec g)))]
+         (if (= (set (keys results)) (graph/nodes graph))
+           (do
+             (println "Task graph done!")
+             results)
+           (do
+             (submit-all! pool out results free)
+             (let [{:keys [id result]} (a/<!! out)]
+               (println "Task" id "done")
+               (recur
+                (next-graph g [id])
+                (set/union in-progress (set (map :id free)))
+                (assoc results id result))))))))))
 
 (def g1 (graph/digraph
          [1 2]
