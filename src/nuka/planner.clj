@@ -8,19 +8,19 @@
             [clojure.set :as set])
   (:import [java.util.concurrent Executors]))
 
-(def g1 (graph/digraph
-         [1 2]
-         [2 3]
-         {3 [4]
-          5 [6 7]}
-         [7 10]
-         [6 10]
-         7 8 9))
-
-(def c1 (graph/digraph [1 2] [2 3] [3 4] [4 1]))
-
 (defn has-cycles? [g]
   (not (alg/topsort g)))
+
+(defn tasks->graph [{:keys [tasks]}]
+  (let [g (->> tasks
+               (map (fn [[k {:keys [deps]}]] [k deps]))
+               (into {})
+               graph/digraph)]
+    (reduce (fn [g [k task]]
+              (attr/add-attr g k ::spec task))
+            g
+            (map vector (keys tasks)
+                 (vals tasks)))))
 
 (defn free-tasks
   "Find all the tasks in the graph that have no dependencies and can
@@ -36,29 +36,15 @@
 (defn empty-graph? [g]
   (empty? (graph/nodes g)))
 
-(defn rand-task
-  "Picks a random task out of the tasks that can be executed (one that
-  has no dependencies)."
-  [g]
-  (let [l (free-tasks g)]
-    (when (seq l)
-      (rand-nth l))))
-
-(defn dummy-fn [msg]
-  (fn [in]
-    (let [x (+ 1000 (rand-int 2000))]
-      (Thread/sleep x)
-      {:duration x
-       :in in})))
-
 (defn task-spec [g id]
   (assoc (attr/attr g id ::spec)
-         :id id
-         :fn (dummy-fn id)))
+         :id id))
 
 (defn submit! [pool out results {:keys    [id]
-                                function :fn
-                                :as      task}]
+                                 function :fn
+                                 :as      task}]
+  (when-not function
+    (throw (ex-info "Task has no function" task)))
   (println "Task" id "started")
   (.submit pool (fn [] (a/>!! out (merge task {:result (function results)})))))
 
@@ -66,12 +52,15 @@
   (doseq [t tasks]
     (submit! pool out results t)))
 
-(defn execute [graph {:keys [threads]}]
-  (let [pool (Executors/newFixedThreadPool threads)
-        out  (a/chan)]
-    (loop [g                 graph
+(defn execute [tasks {:keys [threads]}]
+  (let [graph (tasks->graph tasks)
+        _     (when (has-cycles? graph)
+                (throw (ex-info "Task graph has cycles" tasks)))
+        pool  (Executors/newFixedThreadPool threads)
+        out   (a/chan)]
+    (loop [g           graph
            in-progress #{}
-           results           {}]
+           results     {}]
       (let [free (->> (set/difference
                        (->> g free-tasks (take threads) set)
                        in-progress)
@@ -88,6 +77,46 @@
                (next-graph g [id])
                (set/union in-progress (set (map :id free)))
                (assoc results id result)))))))))
+
+(def g1 (graph/digraph
+         [1 2]
+         [2 3]
+         {3 [4]
+          5 [6 7]}
+         [7 10]
+         [6 10]
+         7 8 9))
+
+(defn dummy-fn [msg]
+  (fn dummy-inner [in]
+    (let [x (+ 1000 (rand-int 2000))]
+      (Thread/sleep x)
+      {:duration x
+       :in in})))
+
+(def g2
+  {:tasks
+   {:a {:deps [:b :c]
+        :fn   (dummy-fn :a)}
+    :b {:deps [:d]
+        :fn   (dummy-fn :b)}
+    :c {:deps [:d]
+        :fn   (dummy-fn :c)}
+    :d {:fn (dummy-fn :d)}
+
+    :e {:deps [:f]
+        :fn   (dummy-fn :e)}
+    :f {:deps [:g]
+        :fn   (dummy-fn :f)}
+    :g {:deps [:h]
+        :fn   (dummy-fn :g)}
+    :h {:fn (dummy-fn :h)}
+
+    :i {:fn (dummy-fn :i)}
+    :j {:fn (dummy-fn :j)}}})
+
+(def c1 (graph/digraph [1 2] [2 3] [3 4] [4 1]))
+
 
 ;; (comment
 ;;   (def g1-next (next-phase g1))
