@@ -60,7 +60,7 @@
   (if-not function
     (do
       (println "Dummy task" id "-- skipping")
-      (a/>!! out (merge task {:result {}})))
+      (future (a/>!! out (merge task {:result {}})))) ;; don't do it in the planning thread, that would be a race condition
     (let [input (strict-merge results in)]
       (.submit pool
                (fn []
@@ -124,7 +124,7 @@
          _     (when (has-cycles? graph)
                  (throw (ex-info "Task graph has cycles" plan))) ;;TODO more validation
          pool  (Executors/newFixedThreadPool threads)
-         out   (a/chan (* threads 4))]
+         out   (a/chan)]
      (loop [g           graph
             in-progress #{}
             results     {}]
