@@ -40,12 +40,27 @@
   (assoc (attr/attr g id ::spec)
          :id id))
 
-(defn submit! [pool out results {:keys    [id]
+(defn strict-merge
+  "Merge that fails on common keys. Adapted from merge-with."
+  [& maps]
+  (when (some identity maps)
+    (let [merge-entry (fn [m e]
+			                  (let [k (key e)
+                              v (val e)]
+			                    (if (contains? m k)
+			                      (throw (ex-info (str "Map already contains key " (pr-str k)) {:m m :k k :new-value v}))
+			                      (assoc m k v))))
+          merge2 (fn [m1 m2]
+		               (reduce merge-entry (or m1 {}) (seq m2)))]
+      (reduce merge2 maps))))
+
+(defn submit! [pool out results {:keys    [id in]
                                  function :fn
                                  :as      task}]
   (when-not function
     (throw (ex-info "Task has no function" task)))
-  (.submit pool (fn [] (a/>!! out (merge task {:result (function results)})))))
+  (let [input (strict-merge results in)]
+    (.submit pool (fn [] (a/>!! out (merge task {:result (function input)}))))))
 
 (defn submit-all! [pool out results tasks]
   (when (seq tasks)
@@ -53,14 +68,44 @@
     (doseq [t tasks]
       (submit! pool out results t))))
 
-(defn validate! [{:keys [tasks]}]
-  (let [declared-steps (-> tasks keys set)
+(defn- key-set [m]
+  (-> m keys set))
+
+(defn- validate-all-deps-resolved! [{:keys [tasks]}]
+  (let [declared-tasks (key-set tasks)
         unknown-deps   (->> (for [[task-name {:keys [deps]}] tasks]
-                              [task-name (set/difference (set deps) declared-steps)])
+                              [task-name (set/difference (set deps) declared-tasks)])
                             (remove (comp empty? second))
                             (into {}))]
     (when-not (empty? unknown-deps)
       (throw (ex-info "Plan contains unresolved deps" unknown-deps)))))
+
+(defn- validate-task-in-map [task-name {:keys [in deps]} declared-tasks]
+  (let [in       (key-set in)
+        deps     (set deps)
+        not-deps (set/difference declared-tasks deps)]
+    [(when (seq (set/intersection in deps))
+       {:task           task-name
+        :type           :certain-clash
+        :offending-keys (set/intersection in deps)})
+     (when (seq (set/intersection in not-deps))
+       {:task          task-name
+        :type          :probable-clash
+        :offending-keys (set/intersection in not-deps)})]))
+
+(defn- validate-input-clashes! [{:keys [tasks]}]
+  (let [declared-tasks (key-set tasks)
+        clashing-inputs (->> tasks
+                             (mapcat (fn [[n task]] (validate-task-in-map n task declared-tasks)))
+                             (remove nil?)
+                             (vec))]
+    (when-not (empty? clashing-inputs)
+      (throw (ex-info "Plan contains tasks whose :in map will/may clash with results from other tasks"
+                      {:clashes clashing-inputs})))))
+
+(defn validate! [plan]
+  (validate-all-deps-resolved! plan)
+  (validate-input-clashes! plan))
 
 (defn execute
   ([plan]
@@ -81,7 +126,7 @@
            (println "Task graph done!")
            results)
          (let [free (->> (set/difference
-                          (->> g free-tasks set)
+                          (-> g free-tasks set)
                           in-progress)
                          (take threads)
                          (map (partial task-spec g)))]
@@ -107,6 +152,32 @@
   (def g2
     {:tasks
      {:a {:deps [:b :c]
+          :in   {:I_GET_AN_EXTRA_KEY true
+                 :f                  10
+                 :b                  10}
+          :fn   (dummy-fn :a)}
+      :b {:deps [:d]
+          :fn   (dummy-fn :b)}
+      :c {:deps [:d]
+          :fn   (dummy-fn :c)}
+      :d {:fn (dummy-fn :d)}
+
+      :e {:deps [:f]
+          :fn   (dummy-fn :e)}
+      :f {:deps [:g]
+          :fn   (dummy-fn :f)
+          :in   {:c 10}}
+      :g {:deps [:h]
+          :fn   (dummy-fn :g)}
+      :h {:fn (dummy-fn :h)}
+
+      :i {:fn (dummy-fn :i)}
+      :j {:fn (dummy-fn :j)}}})
+
+  (def g3
+    {:tasks
+     {:a {:deps [:b :c]
+          :in   {:I_GET_AN_EXTRA_KEY true}
           :fn   (dummy-fn :a)}
       :b {:deps [:d]
           :fn   (dummy-fn :b)}
