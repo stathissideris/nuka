@@ -169,6 +169,7 @@
         {:duration x
          :in in})))
 
+  ;; fails validation:
   (def g2
     {:tasks
      {:a {:deps [:b :c]
@@ -194,6 +195,7 @@
       :i {:fn (dummy-fn :i)}
       :j {:fn (dummy-fn :j)}}})
 
+  ;; demo extra input
   (def g3
     {:tasks
      {:a {:deps [:b :c]
@@ -216,6 +218,7 @@
       :i {:fn (dummy-fn :i)}
       :j {:fn (dummy-fn :j)}}})
 
+  ;; demo exceptions
   (def g4
     {:tasks
      {:a {:deps [:b :c]
@@ -237,15 +240,14 @@
       :i {:fn (dummy-fn :i)}
       :j {:fn (dummy-fn :j)}}})
 
+  ;; demo dummy tasks
   (def g5
     {:tasks
      {:a {:deps [:b :c]
           :fn   (dummy-fn :a)}
       :b {:deps [:d]
           :fn   (dummy-fn :b)}
-      :c {:deps [:d]
-          ;;:fn   (dummy-fn :c)
-          }
+      :c {:deps [:d]}
       :d {:fn (dummy-fn :d)}
 
       :e {:deps [:f]
