@@ -2,7 +2,7 @@
   (:require [loom.graph :as graph]
             [loom.alg :as alg]
             [loom.alg-generic :as generic]
-            [loom.io :refer [view]]
+            [loom.io]
             [loom.attr :as attr]
             [clojure.core.async :as a]
             [clojure.set :as set])
@@ -53,14 +53,24 @@
     (doseq [t tasks]
       (submit! pool out results t))))
 
+(defn validate! [{:keys [tasks]}]
+  (let [declared-steps (-> tasks keys set)
+        unknown-deps   (->> (for [[task-name {:keys [deps]}] tasks]
+                              [task-name (set/difference (set deps) declared-steps)])
+                            (remove (comp empty? second))
+                            (into {}))]
+    (when-not (empty? unknown-deps)
+      (throw (ex-info "Plan contains unresolved deps" unknown-deps)))))
+
 (defn execute
-  ([tasks]
-   (execute tasks nil))
-  ([tasks {:keys [threads]
-           :or   {threads 4}}]
-   (let [graph (tasks->graph tasks)
+  ([plan]
+   (execute plan nil))
+  ([plan {:keys [threads]
+          :or   {threads 4}}]
+   (validate! plan)
+   (let [graph (tasks->graph plan)
          _     (when (has-cycles? graph)
-                 (throw (ex-info "Task graph has cycles" tasks))) ;;TODO more validation
+                 (throw (ex-info "Task graph has cycles" plan))) ;;TODO more validation
          pool  (Executors/newFixedThreadPool threads)
          out   (a/chan)]
      (loop [g           graph
@@ -82,6 +92,9 @@
               (next-graph g [id])
               (set/union in-progress (set (map :id free)))
               (assoc results id result)))))))))
+
+(defn view [tasks]
+  (loom.io/view (tasks->graph tasks)))
 
 (comment
   (defn dummy-fn [msg]
