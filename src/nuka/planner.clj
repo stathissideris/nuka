@@ -57,10 +57,17 @@
 (defn submit! [pool out results {:keys    [id in]
                                  function :fn
                                  :as      task}]
-  (when-not function
-    (throw (ex-info "Task has no function" task)))
-  (let [input (strict-merge results in)]
-    (.submit pool (fn [] (a/>!! out (merge task {:result (function input)}))))))
+  (if-not function
+    (do
+      (println "Dummy task" id "-- skipping")
+      (a/>!! out (merge task {:result {}})))
+    (let [input (strict-merge results in)]
+      (.submit pool
+               (fn []
+                 (try
+                   (a/>!! out (merge task {:result (function input)}))
+                   (catch Exception e
+                     (a/>!! out (merge task {:exception e})))))))))
 
 (defn submit-all! [pool out results tasks]
   (when (seq tasks)
@@ -117,7 +124,7 @@
          _     (when (has-cycles? graph)
                  (throw (ex-info "Task graph has cycles" plan))) ;;TODO more validation
          pool  (Executors/newFixedThreadPool threads)
-         out   (a/chan)]
+         out   (a/chan (* threads 4))]
      (loop [g           graph
             in-progress #{}
             results     {}]
@@ -131,15 +138,28 @@
                          (take threads)
                          (map (partial task-spec g)))]
            (submit-all! pool out results free)
-           (let [{:keys [id result]} (a/<!! out)]
-             (println "Task" id "done")
-             (recur
-              (next-graph g [id])
-              (set/union in-progress (set (map :id free)))
-              (assoc results id result)))))))))
+           (let [{:keys [id result exception] :as msg} (a/<!! out)]
+             (if exception
+               (do
+                 (println "Task" id "failed")
+                 (println "Stopping thread pool...")
+                 (.shutdown pool)
+                 (throw (ex-info (str "Task " id " failed") {:msg         (.getMessage exception)
+                                                             :failed-task id
+                                                             :results     results} exception)))
+               (do
+                 (println "Task" id "done")
+                 (recur
+                  (next-graph g [id])
+                  (set/union in-progress (set (map :id free)))
+                  (assoc results id result)))))))))))
 
 (defn view [tasks]
   (loom.io/view (tasks->graph tasks)))
+
+
+
+
 
 (comment
   (defn dummy-fn [msg]
@@ -183,6 +203,49 @@
           :fn   (dummy-fn :b)}
       :c {:deps [:d]
           :fn   (dummy-fn :c)}
+      :d {:fn (dummy-fn :d)}
+
+      :e {:deps [:f]
+          :fn   (dummy-fn :e)}
+      :f {:deps [:g]
+          :fn   (dummy-fn :f)}
+      :g {:deps [:h]
+          :fn   (dummy-fn :g)}
+      :h {:fn (dummy-fn :h)}
+
+      :i {:fn (dummy-fn :i)}
+      :j {:fn (dummy-fn :j)}}})
+
+  (def g4
+    {:tasks
+     {:a {:deps [:b :c]
+          :fn   (dummy-fn :a)}
+      :b {:deps [:d]
+          :fn   (dummy-fn :b)}
+      :c {:deps [:d]
+          :fn   (dummy-fn :c)}
+      :d {:fn (dummy-fn :d)}
+
+      :e {:deps [:f]
+          :fn   (dummy-fn :e)}
+      :f {:deps [:g]
+          :fn   (dummy-fn :f)}
+      :g {:deps [:h]
+          :fn   (fn [_] (throw (ex-info "I fail" {})))}
+      :h {:fn (dummy-fn :h)}
+
+      :i {:fn (dummy-fn :i)}
+      :j {:fn (dummy-fn :j)}}})
+
+  (def g5
+    {:tasks
+     {:a {:deps [:b :c]
+          :fn   (dummy-fn :a)}
+      :b {:deps [:d]
+          :fn   (dummy-fn :b)}
+      :c {:deps [:d]
+          ;;:fn   (dummy-fn :c)
+          }
       :d {:fn (dummy-fn :d)}
 
       :e {:deps [:f]
