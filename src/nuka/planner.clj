@@ -54,26 +54,31 @@
 		               (reduce merge-entry (or m1 {}) (seq m2)))]
       (reduce merge2 maps))))
 
-(defn submit! [pool out results {:keys    [id in]
-                                 function :fn
-                                 :as      task}]
-  (if-not function
-    (do
-      (println "Dummy task" id "-- skipping")
-      (future (a/>!! out (merge task {:result {}})))) ;; don't do it in the planning thread, that would be a race condition
-    (let [input (strict-merge results in)]
-      (.submit pool
-               (fn []
-                 (try
-                   (a/>!! out (merge task {:result (function input)}))
-                   (catch Exception e
-                     (a/>!! out (merge task {:exception e})))))))))
+(defn select [env select-def select-fn]
+  (reduce-kv (fn [m k v] (assoc m k (select-fn env v))) {} select-def))
 
-(defn submit-all! [pool out results tasks]
+(defn submit! [{:keys [pool out results task opts]}]
+  (let [{:keys      [id in]
+         function   :fn
+         select-def :select} task
+        {:keys [select-fn]}  opts]
+    (if-not function
+      (do
+        (println "Dummy task" id "-- skipping")
+        (future (a/>!! out (merge task {:result {}})))) ;; don't do it in the planning thread, that would be a race condition
+      (let [input (strict-merge results in (select results select-def select-fn))]
+        (.submit pool
+                 (fn []
+                   (try
+                     (a/>!! out (merge task {:result (function input)}))
+                     (catch Exception e
+                       (a/>!! out (merge task {:exception e}))))))))))
+
+(defn submit-all! [{:keys [pool out results tasks opts] :as args}]
   (when (seq tasks)
     (println "Starting" (pr-str (map :id tasks)))
     (doseq [t tasks]
-      (submit! pool out results t))))
+      (submit! {:pool pool :out out :results results :task t :opts opts}))))
 
 (defn- key-set [m]
   (-> m keys set))
@@ -114,20 +119,31 @@
   (validate-all-deps-resolved! plan)
   (validate-input-clashes! plan))
 
+(defn get-in-env [m path]
+  (if (coll? path)
+    (get-in m path)
+    (get m path)))
+
+(def default-opts
+  {:threads   4
+   :select-fn get-in-env
+   :env       {}})
+
 (defn execute
   ([plan]
    (execute plan nil))
-  ([plan {:keys [threads]
-          :or   {threads 4}}]
+  ([plan opts]
    (validate! plan)
-   (let [graph (tasks->graph plan)
-         _     (when (has-cycles? graph)
-                 (throw (ex-info "Task graph has cycles" plan))) ;;TODO more validation
-         pool  (Executors/newFixedThreadPool threads)
-         out   (a/chan)]
+   (let [{:keys [threads env]
+          :as opts} (merge default-opts opts)
+         graph      (tasks->graph plan)
+         _          (when (has-cycles? graph)
+                      (throw (ex-info "Task graph has cycles" plan)))
+         pool       (Executors/newFixedThreadPool threads)
+         out        (a/chan)]
      (loop [g           graph
             in-progress #{}
-            results     {}]
+            results     env]
        (if (= (set (keys results)) (graph/nodes graph))
          (do
            (println "Task graph done!")
@@ -137,7 +153,11 @@
                           in-progress)
                          (take threads)
                          (map (partial task-spec g)))]
-           (submit-all! pool out results free)
+           (submit-all! {:pool    pool
+                         :out     out
+                         :results results
+                         :tasks   free
+                         :opts    opts})
            (let [{:keys [id result exception] :as msg} (a/<!! out)]
              (if exception
                (do
@@ -167,7 +187,7 @@
       (let [x (+ 1000 (rand-int 2000))]
         (Thread/sleep x)
         {:duration x
-         :in in})))
+         :in       in})))
 
   ;; fails validation:
   (def g2
@@ -261,62 +281,29 @@
       :i {:fn (dummy-fn :i)}
       :j {:fn (dummy-fn :j)}}})
 
+  ;; demo select
+  (def g6
+    {:tasks
+     {:a {:deps [:b :c]
+          :fn   (dummy-fn :a)}
+      :b {:deps [:d]
+          :fn   (dummy-fn :b)}
+      :c {:deps   [:d]
+          :fn     (dummy-fn :c)
+          :select {:c1 [:d :res-d1 :a]
+                   :c2 [:d :res-d2]}}
+      :d {:fn (fn [_] {:res-d1 {:a 60}
+                       :res-d2 9})}
+
+      :e {:deps [:f]
+          :fn   (dummy-fn :e)}
+      :f {:deps [:g]
+          :fn   (dummy-fn :f)}
+      :g {:deps [:h]
+          :fn   (dummy-fn :g)}
+      :h {:fn (dummy-fn :h)}
+
+      :i {:fn (dummy-fn :i)}
+      :j {:fn (dummy-fn :j)}}})
+
   (execute g2))
-
-
-;; (comment
-;;   (def g1-next (next-phase g1))
-;;
-;;   (->> g1-next graph/nodes (map (graph/successors g1-next)))
-;;
-;;   (-> g1 next-phase next-phase next-phase next-phase)
-;;
-;;   {:aliases [[systems.deploy :as d]]
-;;    :data    {:taz    {... ...}
-;;              :ingest {... ...}}
-;;    :tasks
-;;    {;; stop and migrate
-;;     :stop-taz        {:impl d/stop-service
-;;                       :args #ref :taz}
-;;
-;;     :stop-ingest     {:impl d/stop-service
-;;                       :args #ref :ingest}
-;;
-;;
-;;     :migrate-db      {:impl d/migrate-db
-;;                       :deps [:stop-taz :stop-ingest]}
-;;
-;;     ;; taz
-;;     :checkout-taz    {:impl d/checkout
-;;                       :args #ref :taz}
-;;
-;;     :jar-taz         {:impl d/uberjar
-;;                       :args #ref :taz
-;;                       :deps [:checkout-taz]}
-;;
-;;     :copy-jar        {:impl d/copy-jar
-;;                       :args #ref :taz
-;;                       :deps [:jar-taz]}
-;;
-;;     :start-taz       {:impl d/start-service
-;;                       :args #ref :taz
-;;                       :deps [:copy-taz :migrate-db]}
-;;
-;;     ;; ingest
-;;     :checkout-ingest {:impl d/checkout
-;;                       :args #ref :ingest}
-;;
-;;     :jar-ingest      {:impl d/uberjar
-;;                       :args #ref :ingest
-;;                       :deps [:checkout-ingest]}
-;;
-;;     :copy-jar        {:impl d/copy-jar
-;;                       :args #ref :ingest
-;;                       :deps [:jar-ingest]}
-;;
-;;     :start-ingest    {:impl d/start-service
-;;                       :args #ref :ingest
-;;                       :deps [:copy-ingest :migrate-db]}
-;;
-;;     ;; dummy
-;;     :deploy          {:deps [:start-taz :start-ingest]}}})
