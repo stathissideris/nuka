@@ -5,7 +5,8 @@
             [loom.io]
             [loom.attr :as attr]
             [clojure.core.async :as a]
-            [clojure.set :as set])
+            [clojure.set :as set]
+            [nuka.util :as util])
   (:import [java.util.concurrent Executors]))
 
 (defn has-cycles? [g]
@@ -40,22 +41,11 @@
   (assoc (attr/attr g id ::spec)
          :id id))
 
-(defn strict-merge
-  "Merge that fails on common keys. Adapted from merge-with."
-  [& maps]
-  (when (some identity maps)
-    (let [merge-entry (fn [m e]
-			                  (let [k (key e)
-                              v (val e)]
-			                    (if (contains? m k)
-			                      (throw (ex-info (str "Map already contains key " (pr-str k)) {:m m :k k :new-value v}))
-			                      (assoc m k v))))
-          merge2 (fn [m1 m2]
-		               (reduce merge-entry (or m1 {}) (seq m2)))]
-      (reduce merge2 maps))))
-
 (defn select [env select-def select-fn]
   (reduce-kv (fn [m k v] (assoc m k (select-fn env v))) {} select-def))
+
+(defn now []
+  (Thread/imeInMillis))
 
 (defn submit! [{:keys [pool out results task opts]}]
   (let [{:keys      [id in]
@@ -66,13 +56,18 @@
       (do
         (println "Dummy task" id "-- skipping")
         (future (a/>!! out (merge task {:result {}})))) ;; don't do it in the planning thread, that would be a race condition
-      (let [input (strict-merge results in (select results select-def select-fn))]
+      (let [input (util/deep-merge results in (select results select-def select-fn))]
         (.submit pool
                  (fn []
                    (try
-                     (a/>!! out (merge task {:result (function input)}))
+                     (let [result (function input)]
+                       (a/>!! out (merge task {:input  input
+                                               :result result
+                                               :end-tm (now)})))
                      (catch Exception e
-                       (a/>!! out (merge task {:exception e}))))))))))
+                       (a/>!! out (merge task {:input     input
+                                               :exception e}))))))
+        (future (a/>!! out (merge task {:start-tm (now)})))))))
 
 (defn submit-all! [{:keys [pool out results tasks opts] :as args}]
   (when (seq tasks)
@@ -127,12 +122,14 @@
 (def default-opts
   {:threads   4
    :select-fn get-in-env
-   :env       {}})
+   :env       {}
+   :logging   {:results true
+               :clashes true}})
 
 (defn execute
   ([plan]
    (execute plan nil))
-  ([plan opts]
+  ([plan {:keys [state-atom logging] :as opts}]
    (validate! plan)
    (let [{:keys [threads env]
           :as opts} (merge default-opts opts)
@@ -141,169 +138,53 @@
                       (throw (ex-info "Task graph has cycles" plan)))
          pool       (Executors/newFixedThreadPool threads)
          out        (a/chan)]
-     (loop [g           graph
-            in-progress #{}
-            results     env]
-       (if (= (set (keys results)) (graph/nodes graph))
-         (do
-           (println "Task graph done!")
-           results)
-         (let [free (->> (set/difference
-                          (-> g free-tasks set)
-                          in-progress)
-                         (take threads)
-                         (map (partial task-spec g)))]
-           (submit-all! {:pool    pool
-                         :out     out
-                         :results results
-                         :tasks   free
-                         :opts    opts})
-           (let [{:keys [id result exception] :as msg} (a/<!! out)]
-             (if exception
-               (do
-                 (println "Task" id "failed")
-                 (println "Stopping thread pool...")
-                 (.shutdown pool)
-                 (throw (ex-info (str "Task " id " failed") {:msg         (.getMessage exception)
-                                                             :failed-task id
-                                                             :results     results} exception)))
-               (do
-                 (println "Task" id "done")
-                 (recur
-                  (next-graph g [id])
-                  (set/union in-progress (set (map :id free)))
-                  (assoc results id result)))))))))))
+     (loop [stuff {:graph       graph
+                   :in-progress #{}
+                   :env         env
+                   :state       {}}]
+       (let [{:keys [graph in-progress env state]} stuff]
+         (when state-atom (reset! state-atom state))
+         (if (= (set (keys state)) (graph/nodes graph))
+           (do
+             (println "Task graph done!")
+             state)
+           (let [free (->> (set/difference
+                            (-> graph free-tasks set)
+                            in-progress)
+                           (take threads)
+                           (map (partial task-spec graph)))]
+             (submit-all! {:pool    pool
+                           :out     out
+                           :results results
+                           :tasks   free
+                           :opts    opts})
+             (let [{:keys [id result exception start-tm] :as msg} (a/<!! out)]
+               (cond exception
+                     (do
+                       (println "Task" id "failed")
+                       (println "Stopping thread pool...")
+                       (.shutdown pool)
+                       (throw (ex-info (str "Task " id " failed")
+                                       {:msg         (.getMessage exception)
+                                        :failed-task id
+                                        :env         env
+                                        :state       (update state ig merge msg)} exception)))
+
+                     start-tm
+                     (do
+                       (println "Task" id "started")
+                       (recur (assoc-in stuff [:state id] msg)))
+
+                     :else
+                     (do
+                       (if (:results logging)
+                         (println "Task" id "done. Result: " (pr-str result))
+                         (println "Task" id "done."))
+                       (recur
+                        {:graph       (next-graph graph [id])
+                         :in-progress (set/union in-progress (set (map :id free)))
+                         :env         (util/deep-merge env result)
+                         :state       (update state ig merge msg)})))))))))))
 
 (defn view [tasks]
   (loom.io/view (tasks->graph tasks)))
-
-
-
-
-
-(comment
-  (defn dummy-fn [msg]
-    (fn dummy-inner [in]
-      (let [x (+ 1000 (rand-int 2000))]
-        (Thread/sleep x)
-        {:duration x
-         :in       in})))
-
-  ;; fails validation:
-  (def g2
-    {:tasks
-     {:a {:deps [:b :c]
-          :in   {:I_GET_AN_EXTRA_KEY true
-                 :f                  10
-                 :b                  10}
-          :fn   (dummy-fn :a)}
-      :b {:deps [:d]
-          :fn   (dummy-fn :b)}
-      :c {:deps [:d]
-          :fn   (dummy-fn :c)}
-      :d {:fn (dummy-fn :d)}
-
-      :e {:deps [:f]
-          :fn   (dummy-fn :e)}
-      :f {:deps [:g]
-          :fn   (dummy-fn :f)
-          :in   {:c 10}}
-      :g {:deps [:h]
-          :fn   (dummy-fn :g)}
-      :h {:fn (dummy-fn :h)}
-
-      :i {:fn (dummy-fn :i)}
-      :j {:fn (dummy-fn :j)}}})
-
-  ;; demo extra input
-  (def g3
-    {:tasks
-     {:a {:deps [:b :c]
-          :in   {:I_GET_AN_EXTRA_KEY true}
-          :fn   (dummy-fn :a)}
-      :b {:deps [:d]
-          :fn   (dummy-fn :b)}
-      :c {:deps [:d]
-          :fn   (dummy-fn :c)}
-      :d {:fn (dummy-fn :d)}
-
-      :e {:deps [:f]
-          :fn   (dummy-fn :e)}
-      :f {:deps [:g]
-          :fn   (dummy-fn :f)}
-      :g {:deps [:h]
-          :fn   (dummy-fn :g)}
-      :h {:fn (dummy-fn :h)}
-
-      :i {:fn (dummy-fn :i)}
-      :j {:fn (dummy-fn :j)}}})
-
-  ;; demo exceptions
-  (def g4
-    {:tasks
-     {:a {:deps [:b :c]
-          :fn   (dummy-fn :a)}
-      :b {:deps [:d]
-          :fn   (dummy-fn :b)}
-      :c {:deps [:d]
-          :fn   (dummy-fn :c)}
-      :d {:fn (dummy-fn :d)}
-
-      :e {:deps [:f]
-          :fn   (dummy-fn :e)}
-      :f {:deps [:g]
-          :fn   (dummy-fn :f)}
-      :g {:deps [:h]
-          :fn   (fn [_] (throw (ex-info "I fail" {})))}
-      :h {:fn (dummy-fn :h)}
-
-      :i {:fn (dummy-fn :i)}
-      :j {:fn (dummy-fn :j)}}})
-
-  ;; demo dummy tasks
-  (def g5
-    {:tasks
-     {:a {:deps [:b :c]
-          :fn   (dummy-fn :a)}
-      :b {:deps [:d]
-          :fn   (dummy-fn :b)}
-      :c {:deps [:d]}
-      :d {:fn (dummy-fn :d)}
-
-      :e {:deps [:f]
-          :fn   (dummy-fn :e)}
-      :f {:deps [:g]
-          :fn   (dummy-fn :f)}
-      :g {:deps [:h]
-          :fn   (dummy-fn :g)}
-      :h {:fn (dummy-fn :h)}
-
-      :i {:fn (dummy-fn :i)}
-      :j {:fn (dummy-fn :j)}}})
-
-  ;; demo select
-  (def g6
-    {:tasks
-     {:a {:deps [:b :c]
-          :fn   (dummy-fn :a)}
-      :b {:deps [:d]
-          :fn   (dummy-fn :b)}
-      :c {:deps   [:d]
-          :fn     (dummy-fn :c)
-          :select {:c1 [:d :res-d1 :a]
-                   :c2 [:d :res-d2]}}
-      :d {:fn (fn [_] {:res-d1 {:a 60}
-                       :res-d2 9})}
-
-      :e {:deps [:f]
-          :fn   (dummy-fn :e)}
-      :f {:deps [:g]
-          :fn   (dummy-fn :f)}
-      :g {:deps [:h]
-          :fn   (dummy-fn :g)}
-      :h {:fn (dummy-fn :h)}
-
-      :i {:fn (dummy-fn :i)}
-      :j {:fn (dummy-fn :j)}}})
-
-  (execute g2))

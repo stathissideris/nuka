@@ -1,0 +1,130 @@
+(require '[cognitect.transcriptor :as xr :refer [check!]]
+         '[nuka.planner :refer :all])
+
+(defn dummy-fn [msg]
+  (fn dummy-inner [in]
+    (let [x (+ 1000 (rand-int 2000))]
+      (Thread/sleep x)
+      {:duration x
+       :in       in})))
+
+;; fails validation:
+(def g1
+  {:tasks
+   {:a {:deps [:b :c]
+        :in   {:I_GET_AN_EXTRA_KEY true
+               :f                  10
+               :b                  10}
+        :fn   (dummy-fn :a)}
+    :b {:deps [:d]
+        :fn   (dummy-fn :b)}
+    :c {:deps [:d]
+        :fn   (dummy-fn :c)}
+    :d {:fn (dummy-fn :d)}
+
+    :e {:deps [:f]
+        :fn   (dummy-fn :e)}
+    :f {:deps [:g]
+        :fn   (dummy-fn :f)
+        :in   {:c 10}}
+    :g {:deps [:h]
+        :fn   (dummy-fn :g)}
+    :h {:fn (dummy-fn :h)}
+
+    :i {:fn (dummy-fn :i)}
+    :j {:fn (dummy-fn :j)}}})
+
+(check! #{::failed}
+        (try (execute g1)
+             (catch Exception _ ::failed)))
+
+;; demo extra input
+(def g2
+  {:tasks
+   {:a {:deps [:b :c]
+        :in   {:I_GET_AN_EXTRA_KEY true}
+        :fn   (dummy-fn :a)}
+    :b {:deps [:d]
+        :fn   (dummy-fn :b)}
+    :c {:deps [:d]
+        :fn   (dummy-fn :c)}
+    :d {:fn (dummy-fn :d)}
+
+    :e {:deps [:f]
+        :fn   (dummy-fn :e)}
+    :f {:deps [:g]
+        :fn   (dummy-fn :f)}
+    :g {:deps [:h]
+        :fn   (dummy-fn :g)}
+    :h {:fn (dummy-fn :h)}
+
+    :i {:fn (dummy-fn :i)}
+    :j {:fn (dummy-fn :j)}}})
+
+;; demo exceptions
+(def g3
+  {:tasks
+   {:a {:deps [:b :c]
+        :fn   (dummy-fn :a)}
+    :b {:deps [:d]
+        :fn   (dummy-fn :b)}
+    :c {:deps [:d]
+        :fn   (dummy-fn :c)}
+    :d {:fn (dummy-fn :d)}
+
+    :e {:deps [:f]
+        :fn   (dummy-fn :e)}
+    :f {:deps [:g]
+        :fn   (dummy-fn :f)}
+    :g {:deps [:h]
+        :fn   (fn [_] (throw (ex-info "I fail" {})))}
+    :h {:fn (dummy-fn :h)}
+
+    :i {:fn (dummy-fn :i)}
+    :j {:fn (dummy-fn :j)}}})
+
+;; demo dummy tasks
+(def g4
+  {:tasks
+   {:a {:deps [:b :c]
+        :fn   (dummy-fn :a)}
+    :b {:deps [:d]
+        :fn   (dummy-fn :b)}
+    :c {:deps [:d]}
+    :d {:fn (dummy-fn :d)}
+
+    :e {:deps [:f]
+        :fn   (dummy-fn :e)}
+    :f {:deps [:g]
+        :fn   (dummy-fn :f)}
+    :g {:deps [:h]
+        :fn   (dummy-fn :g)}
+    :h {:fn (dummy-fn :h)}
+
+    :i {:fn (dummy-fn :i)}
+    :j {:fn (dummy-fn :j)}}})
+
+;; demo select
+(def g5
+  {:tasks
+   {:a {:deps [:b :c]
+        :fn   (dummy-fn :a)}
+    :b {:deps [:d]
+        :fn   (dummy-fn :b)}
+    :c {:deps   [:d]
+        :fn     (dummy-fn :c)
+        :select {:c1 [:d :res-d1 :a]
+                 :c2 [:d :res-d2]}}
+    :d {:fn (fn [_] {:res-d1 {:a 60}
+                     :res-d2 9})}
+
+    :e {:deps [:f]
+        :fn   (dummy-fn :e)}
+    :f {:deps [:g]
+        :fn   (dummy-fn :f)}
+    :g {:deps [:h]
+        :fn   (dummy-fn :g)}
+    :h {:fn (dummy-fn :h)}
+
+    :i {:fn (dummy-fn :i)}
+    :j {:fn (dummy-fn :j)}}})
