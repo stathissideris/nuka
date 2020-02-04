@@ -76,11 +76,8 @@
     (doseq [t tasks]
       (submit! {:pool pool :out out :env env :task t :opts opts}))))
 
-(defn- key-set [m]
-  (-> m keys set))
-
 (defn- validate-all-deps-resolved! [{:keys [tasks]}]
-  (let [declared-tasks (key-set tasks)
+  (let [declared-tasks (-> tasks key set)
         unknown-deps   (->> (for [[task-name {:keys [deps]}] tasks]
                               [task-name (set/difference (set deps) declared-tasks)])
                             (remove (comp empty? second))
@@ -88,32 +85,8 @@
     (when-not (empty? unknown-deps)
       (throw (ex-info "Plan contains unresolved deps" unknown-deps)))))
 
-(defn- validate-task-in-map [task-name {:keys [in deps]} declared-tasks]
-  (let [in       (key-set in)
-        deps     (set deps)
-        not-deps (set/difference declared-tasks deps)]
-    [(when (seq (set/intersection in deps))
-       {:task           task-name
-        :type           :certain-clash
-        :offending-keys (set/intersection in deps)})
-     (when (seq (set/intersection in not-deps))
-       {:task          task-name
-        :type          :probable-clash
-        :offending-keys (set/intersection in not-deps)})]))
-
-(defn- validate-input-clashes! [{:keys [tasks]}]
-  (let [declared-tasks (key-set tasks)
-        clashing-inputs (->> tasks
-                             (mapcat (fn [[n task]] (validate-task-in-map n task declared-tasks)))
-                             (remove nil?)
-                             (vec))]
-    (when-not (empty? clashing-inputs)
-      (throw (ex-info "Plan contains tasks whose :in map will/may clash with results from other tasks"
-                      {:clashes clashing-inputs})))))
-
 (defn validate! [plan]
-  (validate-all-deps-resolved! plan)
-  (validate-input-clashes! plan))
+  (validate-all-deps-resolved! plan))
 
 (defn get-in-env [m path]
   (if (coll? path)
