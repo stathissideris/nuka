@@ -3,10 +3,12 @@
 
 (defn dummy-fn [msg]
   (fn dummy-inner [in]
-    (let [x (+ 1000 (rand-int 2000))]
+    (let [x (+ 100 (rand-int 200))]
       (Thread/sleep x)
-      {:duration x
-       :in       in})))
+      {:duration x})))
+
+(defn clean [state]
+  (reduce-kv (fn [m k v] (assoc m k (select-keys v [:id :input :result]))) {} state))
 
 ;; fails validation:
 (def g1
@@ -61,6 +63,8 @@
     :i {:fn (dummy-fn :i)}
     :j {:fn (dummy-fn :j)}}})
 
+(check! #(-> % :a :input :I_GET_AN_EXTRA_KEY) (clean (execute g2)))
+
 ;; demo exceptions
 (def g3
   {:tasks
@@ -83,6 +87,11 @@
     :i {:fn (dummy-fn :i)}
     :j {:fn (dummy-fn :j)}}})
 
+(check! #{:g} (try
+                (execute g3)
+                (catch Exception e
+                  (-> e ex-data :failed-task))))
+
 ;; demo dummy tasks
 (def g4
   {:tasks
@@ -104,17 +113,20 @@
     :i {:fn (dummy-fn :i)}
     :j {:fn (dummy-fn :j)}}})
 
+(let [res (clean (execute g4))]
+  (check! #(= (-> g4 :tasks keys set) (-> % keys set)) res))
+
 ;; demo select
 (def g5
   {:tasks
    {:a {:deps [:b :c]
+        :select {:c1 [:res-d1 :a]
+                 :c2 :res-d2}
         :fn   (dummy-fn :a)}
     :b {:deps [:d]
         :fn   (dummy-fn :b)}
     :c {:deps   [:d]
-        :fn     (dummy-fn :c)
-        :select {:c1 [:d :res-d1 :a]
-                 :c2 [:d :res-d2]}}
+        :fn     (dummy-fn :c)}
     :d {:fn (fn [_] {:res-d1 {:a 60}
                      :res-d2 9})}
 
@@ -128,3 +140,6 @@
 
     :i {:fn (dummy-fn :i)}
     :j {:fn (dummy-fn :j)}}})
+
+(let [res (clean (execute g5))]
+  (check! #(-> % :a :input keys set (= #{:c1 :c2 :duration :res-d1 :res-d2})) res))

@@ -18,7 +18,7 @@
                (into {})
                graph/digraph)]
     (reduce (fn [g [k task]]
-              (attr/add-attr g k ::spec task))
+              (attr/add-attr g k ::def task))
             g
             (map vector (keys tasks)
                  (vals tasks)))))
@@ -37,26 +37,26 @@
 (defn empty-graph? [g]
   (empty? (graph/nodes g)))
 
-(defn task-spec [g id]
-  (assoc (attr/attr g id ::spec)
+(defn task-def [g id]
+  (assoc (attr/attr g id ::def)
          :id id))
 
 (defn select [env select-def select-fn]
   (reduce-kv (fn [m k v] (assoc m k (select-fn env v))) {} select-def))
 
 (defn now []
-  (Thread/imeInMillis))
+  (System/currentTimeMillis))
 
-(defn submit! [{:keys [pool out results task opts]}]
+(defn submit! [{:keys [pool out env task opts]}]
   (let [{:keys      [id in]
          function   :fn
          select-def :select} task
         {:keys [select-fn]}  opts]
     (if-not function
       (do
-        (println "Dummy task" id "-- skipping")
+        ((-> opts :logging :log-fn) "Dummy task" id "-- skipping")
         (future (a/>!! out (merge task {:result {}})))) ;; don't do it in the planning thread, that would be a race condition
-      (let [input (util/deep-merge results in (select results select-def select-fn))]
+      (let [input (util/deep-merge env in (when select-def (select env select-def select-fn)))]
         (.submit pool
                  (fn []
                    (try
@@ -67,13 +67,14 @@
                      (catch Exception e
                        (a/>!! out (merge task {:input     input
                                                :exception e}))))))
-        (future (a/>!! out (merge task {:start-tm (now)})))))))
+        ;;(future (a/>!! out (merge task {:start-tm (now)})))
+        ))))
 
-(defn submit-all! [{:keys [pool out results tasks opts] :as args}]
+(defn submit-all! [{:keys [pool out env tasks opts] :as args}]
   (when (seq tasks)
-    (println "Starting" (pr-str (map :id tasks)))
+    ((-> opts :logging :log-fn) "Starting" (pr-str (map :id tasks)))
     (doseq [t tasks]
-      (submit! {:pool pool :out out :results results :task t :opts opts}))))
+      (submit! {:pool pool :out out :env env :task t :opts opts}))))
 
 (defn- key-set [m]
   (-> m keys set))
@@ -119,72 +120,87 @@
     (get-in m path)
     (get m path)))
 
+(defn- handle-exception [{:keys [id result exception start-tm] :as msg}
+                         {:keys [env state pool]}
+                         {:keys [logging] :as opts}]
+  (let [{:keys [log-error-fn]} logging]
+    (log-error-fn "Task" id "failed")
+    (log-error-fn "Stopping thread pool..."))
+  (.shutdown pool)
+  (throw (ex-info (str "Task " id " failed")
+                  {:msg         (.getMessage exception)
+                   :failed-task id
+                   :env         env
+                   :state       (update state id merge msg)} exception)))
+
+(defn- handle-started [{:keys [id] :as msg}
+                       stuff
+                       {:keys [logging]}]
+  (let [{:keys [log-fn]} logging]
+    (log-fn "Task" id "started"))
+  (assoc-in stuff [:state id] msg))
+
+(defn- handle-success [{:keys [id result] :as msg}
+                       {:keys [graph env state in-progress submitted]}
+                       {:keys [logging] :as opts}]
+  (let [{:keys [log-fn]} logging]
+    (if (:results logging)
+      (log-fn "Task" id "done =>" (pr-str result))
+      (log-fn "Task" id "done.")))
+  {:graph       (next-graph graph [id])
+   :in-progress (set/union in-progress (set (map :id submitted)))
+   :env         (util/deep-merge env result)
+   :state       (update state id merge msg)})
+
+(defn- done? [graph]
+  (empty? (graph/nodes graph)))
+
 (def default-opts
   {:threads   4
    :select-fn get-in-env
    :env       {}
-   :logging   {:results true
-               :clashes true}})
+   :logging   {:log-fn       println
+               :log-error-fn println
+               :results      true
+               :clashes      true}})
 
 (defn execute
   ([plan]
    (execute plan nil))
-  ([plan {:keys [state-atom logging] :as opts}]
+  ([plan opts]
    (validate! plan)
-   (let [{:keys [threads env]
-          :as opts} (merge default-opts opts)
-         graph      (tasks->graph plan)
-         _          (when (has-cycles? graph)
-                      (throw (ex-info "Task graph has cycles" plan)))
-         pool       (Executors/newFixedThreadPool threads)
-         out        (a/chan)]
+   (let [{:keys [state-atom logging threads env]
+          :as opts}       (merge default-opts opts)
+         {:keys [log-fn]} logging
+         graph            (tasks->graph plan)
+         _                (when (has-cycles? graph)
+                            (throw (ex-info "Task graph has cycles" plan)))
+         pool             (Executors/newFixedThreadPool threads)
+         out              (a/chan)]
      (loop [stuff {:graph       graph
                    :in-progress #{}
                    :env         env
                    :state       {}}]
        (let [{:keys [graph in-progress env state]} stuff]
          (when state-atom (reset! state-atom state))
-         (if (= (set (keys state)) (graph/nodes graph))
+         (if (done? graph)
            (do
-             (println "Task graph done!")
+             (log-fn "Plan done!")
              state)
-           (let [free (->> (set/difference
-                            (-> graph free-tasks set)
-                            in-progress)
-                           (take threads)
-                           (map (partial task-spec graph)))]
-             (submit-all! {:pool    pool
-                           :out     out
-                           :results results
-                           :tasks   free
-                           :opts    opts})
+           (let [to-submit (->> (set/difference
+                                 (-> graph free-tasks set)
+                                 in-progress)
+                                (take threads)
+                                (map (partial task-def graph)))]
+             (submit-all! {:pool  pool
+                           :out   out
+                           :env   env
+                           :tasks to-submit
+                           :opts  opts})
              (let [{:keys [id result exception start-tm] :as msg} (a/<!! out)]
-               (cond exception
-                     (do
-                       (println "Task" id "failed")
-                       (println "Stopping thread pool...")
-                       (.shutdown pool)
-                       (throw (ex-info (str "Task " id " failed")
-                                       {:msg         (.getMessage exception)
-                                        :failed-task id
-                                        :env         env
-                                        :state       (update state ig merge msg)} exception)))
-
-                     start-tm
-                     (do
-                       (println "Task" id "started")
-                       (recur (assoc-in stuff [:state id] msg)))
-
-                     :else
-                     (do
-                       (if (:results logging)
-                         (println "Task" id "done. Result: " (pr-str result))
-                         (println "Task" id "done."))
-                       (recur
-                        {:graph       (next-graph graph [id])
-                         :in-progress (set/union in-progress (set (map :id free)))
-                         :env         (util/deep-merge env result)
-                         :state       (update state ig merge msg)})))))))))))
+               (cond exception (handle-exception msg (assoc stuff :pool pool) opts)
+                     ;;start-tm  (recur (handle-started msg stuff opts))
+                     :else     (recur (handle-success msg (assoc stuff :submitted to-submit) opts)))))))))))
 
 (defn view [tasks]
   (loom.io/view (tasks->graph tasks)))

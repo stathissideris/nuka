@@ -1,9 +1,7 @@
 (ns nuka.util)
 
-(defn deep-merge [& maps]
-  (apply
-    (fn m [& maps]
-      (if (every? map? maps)
-        (apply merge-with m maps)
-        (apply merge maps)))
-    maps))
+(defn deep-merge
+  [& vals]
+  (if (every? (some-fn map? nil?) vals)
+    (apply merge-with deep-merge vals)
+    (last vals)))
