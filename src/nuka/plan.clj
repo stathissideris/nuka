@@ -1,4 +1,4 @@
-(ns nuka.planner
+(ns nuka.plan
   (:require [loom.graph :as graph]
             [loom.alg :as alg]
             [loom.alg-generic :as generic]
@@ -12,7 +12,7 @@
 (defn has-cycles? [g]
   (not (alg/topsort g)))
 
-(defn tasks->graph [{:keys [tasks]}]
+(defn plan->graph [{:keys [tasks]}]
   (let [g (->> tasks
                (map (fn [[k {:keys [deps]}]] [k deps]))
                (into {})
@@ -22,6 +22,26 @@
             g
             (map vector (keys tasks)
                  (vals tasks)))))
+
+(defn graph->plan [graph]
+  ;;filter out deps that are no longer nodes in the graph
+  (let [filter-deps #(update % :deps (comp vec (partial filter (partial graph/has-node? graph))))]
+    {:tasks (->> graph graph/nodes (map (fn [x] [x (filter-deps (attr/attr graph x ::def))])) (into {}))}))
+
+(defn subplan [plan nodes]
+  (let [g (plan->graph plan)]
+    (graph->plan (graph/subgraph g nodes))))
+
+(defn for-target [plan target]
+  (let [g (plan->graph plan)]
+    (graph->plan
+     (graph/subgraph
+      g
+      (conj (alg/pre-traverse g target) target)))))
+
+(defn for-tags [{:keys [tasks] :as plan} tags]
+  (let [tags (set tags)]
+    (subplan plan (map key (filter #(set/intersection tags (:tags %)) tasks)))))
 
 (defn free-tasks
   "Find all the tasks in the graph that have no dependencies and can
@@ -44,7 +64,7 @@
 (defn select [env select-def select-fn]
   (reduce-kv (fn [m k v] (assoc m k (select-fn env v))) {} select-def))
 
-(defn now []
+(defn- now []
   (System/currentTimeMillis))
 
 (defn submit! [{:keys [pool out env task opts]}]
@@ -77,7 +97,7 @@
       (submit! {:pool pool :out out :env env :task t :opts opts}))))
 
 (defn- validate-all-deps-resolved! [{:keys [tasks]}]
-  (let [declared-tasks (-> tasks key set)
+  (let [declared-tasks (-> tasks keys set)
         unknown-deps   (->> (for [[task-name {:keys [deps]}] tasks]
                               [task-name (set/difference (set deps) declared-tasks)])
                             (remove (comp empty? second))
@@ -145,7 +165,7 @@
    (let [{:keys [state-atom logging threads env]
           :as opts}       (merge default-opts opts)
          {:keys [log-fn]} logging
-         graph            (tasks->graph plan)
+         graph            (plan->graph plan)
          _                (when (has-cycles? graph)
                             (throw (ex-info "Task graph has cycles" plan)))
          pool             (Executors/newFixedThreadPool threads)
@@ -176,4 +196,4 @@
                      :else     (recur (handle-success msg (assoc stuff :submitted to-submit) opts)))))))))))
 
 (defn view [tasks]
-  (loom.io/view (tasks->graph tasks)))
+  (loom.io/view (plan->graph tasks)))
