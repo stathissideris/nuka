@@ -43,6 +43,13 @@
   (let [tags (set tags)]
     (subplan plan (map key (filter #(set/intersection tags (:tags %)) tasks)))))
 
+(defn dry [plan]
+  (update plan :tasks
+          (partial reduce-kv
+                   (fn [m k v]
+                     (assoc m k (assoc v :fn (fn random-sleep [_] (Thread/sleep (rand-int 1000))))))
+                   {})))
+
 (defn free-tasks
   "Find all the tasks in the graph that have no dependencies and can
   be performed right now."
