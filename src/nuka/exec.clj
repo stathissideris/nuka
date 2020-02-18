@@ -116,9 +116,9 @@
 (defn wait
   ([proc]
    (wait proc {:zero-throw false}))
-  ([proc {:keys [zero-throw]}]
+  ([proc {:keys [zero-throw] :as opts}]
    (if-not (sequential? proc)
-     (wait [proc])
+     (wait [proc] opts)
      (loop [cs proc
             vs []]
        (let [[v p]   (async/alts!! (map :result-channel cs))
