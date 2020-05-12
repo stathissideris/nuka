@@ -171,7 +171,7 @@
    (>print process nil))
   ([{:keys [cmd out err] :as process}
     {:keys [color cmd-only] :or {color true}}]
-   (println (c/magenta "CMD:" cmd))
+   (println (c/magenta "CMD: " cmd))
    (let [m (tagged-merge [out err])]
      (go-loop []
        (if-let [[line c] (<! m)]
@@ -181,7 +181,7 @@
                (println (c/white line))
                (println (c/red line))))
            (recur))
-         (println (c/magenta "END:" cmd)))))
+         (println (c/magenta "END: " cmd)))))
    process))
 
 (defn >no-err [process]
