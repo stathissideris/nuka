@@ -1,13 +1,9 @@
 (ns nuka.remote-exec
-  (:require [nuka.exec :as exec :refer [run-command >slurp exit-code wait]]
+  (:require [nuka.exec :as exec :refer [>slurp exit-code wait]]
             [nuka.script :as script :refer [script call q chain-and raw call? script?]]
             [nuka.network :as net]
-            nuka.script.bash
+            [nuka.script.bash :as bash]
             [clojure.spec.alpha :as s]))
-
-(defrecord Machine [name host user id-file])
-
-(def bash-render nuka.script.bash/render)
 
 (s/def ::user string?)
 (s/def ::host string?)
@@ -18,7 +14,7 @@
           :opt-un [::name ::id-file]))
 
 (defn command-on
-  "Runs a command on the passed machine via ssd. scr can be a string
+  "Runs a command on the passed machine via ssh. scr can be a string
   containing the code, a Script record or a single Call record."
   ([machine scr]
    (command-on machine scr {}))
@@ -27,11 +23,11 @@
      (throw (ex-info "machine map for remote-exec is not valid"
                      {:machine machine :script scr :ssh-params ssh-params})))
    (let [scr (cond (string? scr) scr
-                   (call? scr)   (bash-render (script scr))
-                   (script? scr) (bash-render scr)
+                   (call? scr)   (bash/render (script scr))
+                   (script? scr) (bash/render scr)
                    :else         (throw (ex-info "Could not process passed script" {:script scr})))]
      (println (format "Running \"%s\" on machine \"%s\" (%s)" scr name host))
-     (run-command
+     (exec/exec
       (if id-file
         (call :ssh {:i id-file} ssh-params (str user "@" host) (q scr))
         (call :ssh ssh-params (str user "@" host) (q scr)))))))
@@ -52,7 +48,7 @@
    (when-not (s/valid? ::machine machine)
      (throw (ex-info "machine map for remote-exec is not valid"
                      {:machine machine :script scr :ssh-params ssh-params})))
-   (let [scr           (if (string? scr) scr (bash-render scr))
+   (let [scr           (if (string? scr) scr (bash/render scr))
          tmp-contents  (into #{} (>slurp (command-on machine (call :ls) ssh-params)))
          local-script  "/tmp/script" ;;TODO make unique
          remote-script "/tmp/script" ;;TODO make unique
