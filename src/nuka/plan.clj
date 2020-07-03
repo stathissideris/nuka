@@ -197,6 +197,7 @@
          (when state-atom (reset! state-atom state))
          (if (done? graph)
            (do
+             (.shutdown pool)
              (log-fn "Plan done!")
              state)
            (let [to-submit (->> (set/difference
