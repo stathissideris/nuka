@@ -69,22 +69,51 @@
   (assoc (attr/attr g id ::def)
          :id id))
 
-(defn select [env select-def select-fn]
-  (reduce-kv (fn [m k v] (assoc m k (select-fn env v))) {} select-def))
+(defn select
+  "Uses `select-fn` to populate a map of values out of `env`, by going through
+  each map entry of `select-def` and putting the result of (select-fn env
+  selector) in the resulting map. If a value is not found via the selector in
+  `env`, the corresponding key is not included at all in the resulting
+  map (instead of including it with a nil value).
+
+  Example:
+
+  > (select {:a {:b 10} :aa {:bb 7}}
+            {:y [:a :b]}
+            get-in-env)
+  {:y 10}"
+  [env select-def select-fn]
+  (reduce-kv (fn [result k selector]
+               (if-let [resolved (select-fn env selector)]
+                 (assoc result k resolved)
+                 result)) {} select-def))
 
 (defn- now []
   (System/currentTimeMillis))
 
-(defn submit! [{:keys [pool out env task opts]}]
-  (let [{:keys      [id in]
-         function   :fn
+(defn task-input
+  "Calculate what the input map of a task will be, based in the current `env`, the
+  task's `:select` and `:in` keys and the `opts` that were passed to
+  `execute` (relevant for custom `:select-fn`).
+
+  The rationale for this order is that `env` is the overall state os it comes
+  first, `:in` carries some static values that are specific to this task, but if
+  `:select` finds the same dynamic value from `env` it may overwrite the default
+  from the `:in` map."
+  [task env opts]
+  (let [{:keys      [in]
          select-def :select} task
         {:keys [select-fn]}  opts]
+    (util/deep-merge env in (when select-def (select env select-def select-fn)))))
+
+(defn submit! [{:keys [pool out env task opts]}]
+  (let [{:keys    [id]
+         function :fn} task]
     (if-not function
       (do
         ((-> opts :logging :log-fn) "Dummy task" id "-- skipping")
         (future (a/>!! out (merge task {:result {}})))) ;; don't do it in the planning thread, that would be a race condition
-      (let [input (util/deep-merge env in (when select-def (select env select-def select-fn)))]
+      (let [input (task-input task env opts)]
         (.submit pool
                  (fn []
                    (try
@@ -165,12 +194,12 @@
                :results      true
                :clashes      true}})
 
-(s/def ::path (s/coll-of any?))
-(s/def ::select (s/map-of any? ::path))
+(s/def ::selector any?)
+(s/def ::select (s/map-of keyword? ::selector))
+(s/def ::in map?)
 (s/def ::deps (s/coll-of keyword?))
 (s/def ::fn fn?)
-(s/def ::task (s/keys :req-un [::fn]
-                      :opt-un [::deps ::select]))
+(s/def ::task (s/keys :opt-un [::fn ::deps ::select]))
 (s/def ::tasks (s/map-of keyword? ::task))
 (s/def ::plan (s/keys :req-un [::tasks]))
 
