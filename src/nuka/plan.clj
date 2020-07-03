@@ -6,7 +6,8 @@
             [loom.attr :as attr]
             [clojure.core.async :as a]
             [clojure.set :as set]
-            [nuka.util :as util])
+            [nuka.util :as util]
+            [clojure.spec.alpha :as s])
   (:import [java.util.concurrent Executors]))
 
 (defn has-cycles? [g]
@@ -164,10 +165,21 @@
                :results      true
                :clashes      true}})
 
+(s/def ::path (s/coll-of any?))
+(s/def ::select (s/map-of any? ::path))
+(s/def ::deps (s/coll-of keyword?))
+(s/def ::fn fn?)
+(s/def ::task (s/keys :req-un [::fn]
+                      :opt-un [::deps ::select]))
+(s/def ::tasks (s/map-of keyword? ::task))
+(s/def ::plan (s/keys :req-un [::tasks]))
+
 (defn execute
   ([plan]
    (execute plan nil))
   ([plan opts]
+   (when-not (s/valid? ::plan plan)
+     (throw (ex-info "Plan not valid" (s/explain-data ::plan plan))))
    (validate! plan)
    (let [{:keys [state-atom logging threads env]
           :as opts}       (merge default-opts opts)
